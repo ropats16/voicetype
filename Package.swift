@@ -153,6 +153,11 @@ let package = Package(
                 .linkedFramework("ApplicationServices"),
             ]
         ),
+        .testTarget(
+            name: "VoiceTypeTests",
+            dependencies: ["VoiceType"],
+            path: "Tests/VoiceTypeTests"
+        ),
     ],
     cxxLanguageStandard: .cxx17
 )

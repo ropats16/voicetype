@@ -22,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private var modelLoaded = false
     private var modelMissing = false
+    private var configIssueCount = 0
+    private var hasConfigErrors = false
 
     // MARK: - Lifecycle
 
@@ -29,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)   // menu-bar only, no Dock icon
         Paths.ensureDirectories()
 
+        reportConfigIssues()
         setupStatusItem()
         requestPermissionsIfNeeded()
         loadModelAsync()
@@ -101,6 +104,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(fix)
         }
 
+        if hasConfigErrors {
+            let configIssue = NSMenuItem(title: "⚠️ Config: \(configIssueCount) binding issue(s) — see log", action: nil, keyEquivalent: "")
+            configIssue.isEnabled = false
+            menu.addItem(configIssue)
+        }
+
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit VoiceType", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
@@ -114,6 +123,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !permissions.isAccessibilityTrusted() { return "Needs Accessibility" }
         if permissions.micStatus != .authorized { return "Needs Microphone" }
         return "Ready"
+    }
+
+    // MARK: - Config validation
+
+    /// Inspects the loaded config for invalid/conflicting bindings and logs each
+    /// issue (errors via `Log.error`, warnings via `Log.info`). Reporting only —
+    /// the config is never modified. If any error exists, `rebuildMenu()` shows a
+    /// single disabled line summarising the count.
+    private func reportConfigIssues() {
+        let issues = ConfigValidator.validate(configStore.config)
+        for issue in issues {
+            switch issue.severity {
+            case .error:   Log.error("Config issue: \(issue.message)")
+            case .warning: Log.info("Config issue: \(issue.message)")
+            }
+        }
+        configIssueCount = issues.count
+        hasConfigErrors = issues.contains { $0.severity == .error }
     }
 
     // MARK: - Permissions
