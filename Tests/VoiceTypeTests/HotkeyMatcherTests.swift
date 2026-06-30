@@ -122,6 +122,39 @@ final class HotkeyMatcherTests: XCTestCase {
         XCTAssertNil(sat(rightOption, .flagsChanged, keyCode: 58, flags: .maskAlternate))
     }
 
+    // MARK: - Cancel key detection (Phase 2, Task 3)
+
+    // Esc is the default cancel key; it is a plain, non-modifier key.
+    private let escKeyCode = 53
+
+    func testCancelKeyDownTriggersCancel() {
+        XCTAssertTrue(
+            HotkeyMatcher.isCancelKeyDown(eventType: .keyDown, keyCode: escKeyCode,
+                                          cancelKeyCode: escKeyCode, isAutorepeat: false),
+            "A fresh keyDown for the cancel key code must trigger a cancel")
+    }
+
+    func testCancelKeyUpDoesNotTrigger() {
+        XCTAssertFalse(
+            HotkeyMatcher.isCancelKeyDown(eventType: .keyUp, keyCode: escKeyCode,
+                                          cancelKeyCode: escKeyCode, isAutorepeat: false),
+            "A keyUp for the cancel key code is a release, never a cancel trigger")
+    }
+
+    func testCancelKeyAutorepeatDoesNotTrigger() {
+        XCTAssertFalse(
+            HotkeyMatcher.isCancelKeyDown(eventType: .keyDown, keyCode: escKeyCode,
+                                          cancelKeyCode: escKeyCode, isAutorepeat: true),
+            "An autorepeat keyDown is a still-held key; it must not fire repeated cancels")
+    }
+
+    func testCancelOtherKeyCodeDoesNotTrigger() {
+        XCTAssertFalse(
+            HotkeyMatcher.isCancelKeyDown(eventType: .keyDown, keyCode: 49,
+                                          cancelKeyCode: escKeyCode, isAutorepeat: false),
+            "A keyDown for a different key code must not trigger a cancel")
+    }
+
     // MARK: - EdgeDetector unit behavior
 
     func testEdgeDetectorSuppressesRepeatsAndNilReadings() {

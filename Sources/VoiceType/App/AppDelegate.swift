@@ -202,10 +202,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             dictation = DictationController(transcriber: transcriber, configStore: configStore)
         }
         if hotkeys == nil {
-            let manager = HotkeyManager(hold: configStore.config.hold, toggle: configStore.config.toggle)
+            let manager = HotkeyManager(hold: configStore.config.hold, toggle: configStore.config.toggle,
+                                        cancelKeyCode: configStore.config.cancelKeyCode)
             manager.onHoldStart = { [weak self] in self?.dictation?.startRecording() }
             manager.onHoldStop = { [weak self] in self?.dictation?.stopRecordingAndTranscribe() }
             manager.onTogglePress = { [weak self] in self?.dictation?.toggleRecording() }
+            manager.onCancel = { [weak self] in self?.dictation?.cancelRecording() }
             if manager.start() {
                 hotkeys = manager
                 Log.info("VoiceType is ready. Hold \(HotkeyDescription.describe(configStore.config.hold)) or press \(HotkeyDescription.describe(configStore.config.toggle)) to dictate.")

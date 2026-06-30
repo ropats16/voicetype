@@ -54,6 +54,21 @@ enum HotkeyMatcher {
             return nil
         }
     }
+
+    /// Whether the event is a fresh key-down for `cancelKeyCode` (default Esc).
+    /// The cancel key is a plain key with no required modifiers, so — unlike the
+    /// rebindable hold/toggle bindings — it needs only a "regular key down, this
+    /// key code" test rather than the full satisfaction logic. Autorepeat
+    /// key-downs are ignored so a held key can't fire repeated cancels; key-ups
+    /// and other key codes are irrelevant.
+    static func isCancelKeyDown(
+        eventType: CGEventType,
+        keyCode: Int,
+        cancelKeyCode: Int,
+        isAutorepeat: Bool
+    ) -> Bool {
+        eventType == .keyDown && keyCode == cancelKeyCode && !isAutorepeat
+    }
 }
 
 /// Stateful press/release edge detector over a stream of satisfaction readings.

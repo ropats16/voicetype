@@ -16,20 +16,27 @@ import AppKit
 final class HotkeyManager {
     private(set) var hold: KeyBinding
     let toggle: KeyBinding
+    /// Key code (default Esc = 53) that cancels an in-progress recording.
+    let cancelKeyCode: Int
 
     /// Fired on the main thread.
     var onHoldStart: (() -> Void)?
     var onHoldStop: (() -> Void)?
     var onTogglePress: (() -> Void)?
+    /// Fired on the main thread when the cancel key is pressed. Fired
+    /// unconditionally — the manager doesn't track recording state, so the
+    /// receiver decides whether there is anything to cancel.
+    var onCancel: (() -> Void)?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var holdEdge = EdgeDetector()
     private var toggleEdge = EdgeDetector()
 
-    init(hold: KeyBinding, toggle: KeyBinding) {
+    init(hold: KeyBinding, toggle: KeyBinding, cancelKeyCode: Int) {
         self.hold = hold
         self.toggle = toggle
+        self.cancelKeyCode = cancelKeyCode
     }
 
     /// Installs the event tap. Returns false if creation failed (almost always
@@ -102,6 +109,19 @@ final class HotkeyManager {
             of: toggle, eventType: type, keyCode: keyCode, flags: flags, isAutorepeat: isAutorepeat)
         // Toggle fires on the press edge only, exactly once per physical press.
         if toggleEdge.update(with: toggleReading) == .press { emit(onTogglePress) }
+
+        // Cancel key (default Esc): a plain non-modifier key, so a fresh keyDown
+        // for cancelKeyCode fires onCancel directly (no edge state needed — the
+        // autorepeat guard already prevents repeats while it's held). Fired
+        // unconditionally; DictationController decides if there's a recording to
+        // cancel. The tap is listen-only, so the Esc press still passes through
+        // to the focused app — acceptable because the user is dictating (not
+        // interacting with the app) while recording; switching to an
+        // intercepting tap is out of scope here.
+        if HotkeyMatcher.isCancelKeyDown(eventType: type, keyCode: keyCode,
+                                         cancelKeyCode: cancelKeyCode, isAutorepeat: isAutorepeat) {
+            emit(onCancel)
+        }
     }
 
     /// Hops a callback to the main thread, matching the rest of the app.

@@ -44,6 +44,18 @@ final class DictationController {
         else { startRecording() }   // startRecording already guards !isBusy
     }
 
+    /// Esc-to-cancel: abort an in-progress recording, discarding the audio.
+    /// Nothing is transcribed, inserted, or copied to the clipboard. If a
+    /// transcription is already in flight (`isRecording == false`, `isBusy`),
+    /// this is a no-op — cancelling mid-transcription is out of scope.
+    func cancelRecording() {
+        cancelMaxDurationTimer()
+        guard recorder.isRecording else { return }   // nothing to cancel
+        recorder.cancel()        // stops + discards samples
+        indicator.dismiss()
+        Log.info("Recording cancelled.")
+    }
+
     func startRecording() {
         guard !isBusy else { return }
         do {
