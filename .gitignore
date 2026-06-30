@@ -1,0 +1,31 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+*.xcodeproj
+Package.resolved
+
+# Build output
+/dist/
+*.app/
+
+# Models (downloaded by setup, never committed)
+/models/
+*.bin
+*.mlmodelc/
+
+# Generated Metal-shader embed artifacts (produced by scripts/embed_metal_shader.sh)
+/Sources/CWhisper/ggml-metal-embed.metal
+/Sources/CWhisper/ggml-metal-embed.s
+/Sources/CWhisper/default.metallib
+
+# whisper.cpp build artifacts (submodule is tracked; its build output is not)
+third_party/whisper.cpp/build/
+third_party/whisper.cpp/**/*.o
+third_party/whisper.cpp/**/*.a
+
+# macOS
+.DS_Store
+
+# Local config / scratch
+/config.local.json
+/.tmp/
