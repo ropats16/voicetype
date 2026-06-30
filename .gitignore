@@ -29,3 +29,6 @@ third_party/whisper.cpp/**/*.a
 # Local config / scratch
 /config.local.json
 /.tmp/
+
+# Subagent-driven-development scratch (briefs, reports, ledger, review diffs)
+/.superpowers/
