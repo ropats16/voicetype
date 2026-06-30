@@ -15,6 +15,8 @@ and the Claude Code CLI. Nothing is ever sent to the internet.
 
 - **Hold-to-talk:** hold **Control + Shift**, speak, release — your words appear
   at the cursor.
+- **Toggle mode:** press **⌃⌥Space** to start, press again to stop — for longer
+  dictation without holding a key. Press **Esc** while recording to cancel.
 - **On-screen indicator** next to your cursor: a waveform while it listens, a
   spinner while it transcribes, then it disappears.
 - **Works everywhere** by pasting (and restoring your clipboard afterward), so it
@@ -123,6 +125,11 @@ capitalization. Try it in Notes, Chrome, Slack, or the Terminal.
 ## Using VoiceType day to day
 
 - **Hold Control + Shift** to record; **release** to transcribe and insert.
+- Or **toggle**: press **⌃⌥Space** once to start, press again to stop — handy for
+  longer passages where you don't want to hold a key down.
+- **Press Esc while recording to cancel** — nothing is transcribed or inserted.
+- Recording **auto-stops** after `maxRecordingSeconds` (default 120) so a
+  forgotten recording can't run forever.
 - The indicator near your cursor shows **listening → transcribing → done**.
 - Your existing clipboard is restored after each dictation, so dictating never
   overwrites something you copied.
@@ -161,12 +168,30 @@ Other good no-character options (edit the `modifiers` list):
 - `["function", "shift"]` → fn+Shift *(note: the Globe/fn key is ignored on some Macs)*
 - A single key: `{ "keyCode": 61, "modifiers": [] }` → hold **Right Option**
 
+**Change the toggle key.** `toggle` is the press-to-start / press-to-stop hotkey.
+Unlike `hold`, it fires on a single press, so it usually pairs a normal key with
+modifiers. The default is ⌃⌥Space:
+
+```json
+"toggle": { "keyCode": 49, "modifiers": ["control", "option"] }
+```
+
+(`keyCode` 49 is Space.) Pick modifiers that aren't a normal typing combo so the
+keypress isn't inserted into your text.
+
+**Cancel key.** `cancelKeyCode` is the key that aborts an in-progress recording
+(default `53` = Esc).
+
 After editing, relaunch VoiceType (quit from the menu, reopen from Applications).
+If a binding is empty, unmatchable, or `hold` and `toggle` collide, VoiceType
+logs the problem at startup and the menu shows a **Config issue** warning.
 
 | Setting               | What it does                                        |
 |-----------------------|-----------------------------------------------------|
 | `modelPath`           | Full path to the speech model `.bin` file.          |
 | `hold`                | The hold-to-talk hotkey (see above).                |
+| `toggle`              | The press-to-start / press-to-stop hotkey.          |
+| `cancelKeyCode`       | Key that cancels a recording (default 53 = Esc).    |
 | `maxRecordingSeconds` | Auto-stop after this many seconds (default 120).    |
 | `trailingSpace`       | Add a space after each dictation (default off).     |
 | `language`            | `en`.                                               |
@@ -194,8 +219,9 @@ then toggle the new one on).
 
 **The hotkey does nothing.**
 Make sure the menu says **Ready** (both permissions granted). If your chosen
-combo still doesn't fire, try a different one (see *Changing the hotkey*). Avoid
-hotkeys that include a normal key like Space — they get typed into your text.
+combo still doesn't fire, try a different one (see *Changing the hotkey*). For
+`hold`, prefer a pure-modifier combo — a bare normal key gets typed into your
+text. For `toggle`, keep at least one modifier with the key for the same reason.
 
 **“Model missing” in the menu.**
 The model file isn't where `config.json` points. Run `make setup` (or
