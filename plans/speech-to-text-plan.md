@@ -113,6 +113,48 @@ A cloneable repo that builds and runs a menu-bar-only app delivering the full di
 
 ---
 
+## Phase 5 — Hardware-aware setup & Intel support
+
+**User stories**: 16, 34 (+ new: Intel Macs are usable)
+
+### What to build
+
+Auto-detect the machine at setup time and provision the **right model + the right build packages** for that chip — while keeping the Apple-Silicon path exactly as it is today (no new packages on Silicon). Intel Macs become first-class via a CPU-only build. Manual model override is preserved.
+
+- **Detection** (`scripts/detect_hardware.sh`, pure shell): architecture (`uname -m` → `arm64` vs `x86_64`), chip (`sysctl -n machdep.cpu.brand_string`), RAM (`sysctl -n hw.memsize`). Emits the recommended default model and whether the Metal path applies.
+- **Auto-pick default model** (overridable) — by chip + RAM:
+
+  | Hardware | Default model |
+  |---|---|
+  | Apple Silicon, ≥16 GB | `medium.en` (today's default) |
+  | Apple Silicon, 8 GB | `small.en` |
+  | Intel, ≥16 GB | `small.en` |
+  | Intel, 8 GB | `base.en` |
+  | Intel, <8 GB / very old | `tiny.en` |
+
+- **Modular, arch-conditional `Package.swift`** (the load-bearing piece — the manifest is Swift compiled for the host, so it branches on the build machine's chip):
+  - `#if arch(arm64)` → **byte-for-byte today's `CWhisper` target**: Metal backend, `ggml-cpu/arch/arm/*`, embedded Metal shader. Unchanged; no new dependencies.
+  - `#else` (x86_64) → CPU build: `ggml-cpu/arch/x86/*` sources (already vendored), **Metal backend excluded** (no `GGML_USE_METAL`, no `ggml-metal/*`, no embedded shader), keep BLAS/Accelerate (Accelerate ships on Intel Macs), add x86 CPU flags (AVX2/FMA/F16C). Executable target drops the `Metal`/`MetalKit` framework links on x86.
+- **Setup flow** (`setup.sh` / `Makefile`): run detection first; on Silicon run the Metal `embed` step + Metal build as now; on Intel **skip the embed step** and do the CPU build; download the auto-picked model. `make embed`/`build` become arch-aware (embed is a no-op on x86).
+- **Manual override preserved**: `modelPath` in config and `make model MODEL=…` still switch models at any time (Phase 3 mechanism). Auto-pick only sets the *default*.
+- **Docs**: update the README compatibility section — Intel is now supported (CPU-only, smaller models), and setup auto-selects the model; document the override.
+
+### Acceptance criteria
+
+- [ ] Setup auto-detects chip + RAM and picks an appropriate default model with no user input.
+- [ ] On Apple Silicon the build is identical to today's Metal path — no new packages/sources/defines added to the arm64 branch.
+- [ ] On Intel (x86_64) the project builds and transcribes **CPU-only** (no Metal), verified at minimum by an `--arch x86_64` build run under **Rosetta on Apple Silicon**, and ideally on real Intel hardware.
+- [ ] The user can still override the model via config / `make model` after setup.
+- [ ] README documents auto-detection, the Intel/CPU path, and the override.
+
+### Notes / risks
+
+- **Verification without an Intel Mac:** `swift build --arch x86_64` + run under Rosetta 2 on the M3 Max proves the x86 build compiles and transcribes (correctness, not representative perf). Real Intel hardware is the final smoke test (a friend's machine).
+- **Intel = CPU-only by design.** Some Intel Macs expose a Metal GPU, but ggml's Metal backend targets Apple-Silicon unified memory and is fragile elsewhere — out of scope; the Intel path stays on Accelerate/BLAS CPU.
+- **macOS floor unchanged** (14+); independent of chip.
+
+---
+
 ## Out of scope for this plan (later)
 
 Packaged signed/notarized `.app` + auto-update; in-app model download store/UI; live streaming; multilingual; transcription history; custom dictionary; iOS.
@@ -124,7 +166,8 @@ Work to each phase's acceptance criteria, demoing the slice end-to-end. Final pa
 ## Unresolved questions
 
 1. Default hotkeys OK? (hold = Right ⌥, toggle = ⌃⌥Space, cancel = Esc)
-2. Min macOS target = 14 (Sonoma)? Apple-Silicon-only, or Intel best-effort too?
+2. ~~Min macOS target = 14 (Sonoma)? Apple-Silicon-only, or Intel best-effort too?~~ → **Resolved:** macOS 14+; Intel supported CPU-only via **Phase 5**.
 3. Build system: SwiftPM-only (CLI-buildable, no Xcode project) vs Xcode project? (SwiftPM keeps "clone and `make run`" cleanest.)
 4. Models dir location: in-repo `./models` (simple, gitignored) vs `~/Library/Application Support`?
 5. App/repo name — "VoiceType" placeholder, keep or rename?
+6. Phase 5 model thresholds — Intel ≥16 GB default `small.en` (accuracy) vs `base.en` (snappier)? And Apple-Silicon 8 GB → `small.en` vs keep `medium.en`?
