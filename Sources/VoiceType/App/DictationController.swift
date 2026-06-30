@@ -34,7 +34,15 @@ final class DictationController {
 
     private var config: Config { configStore.config }
 
-    // MARK: - Hold-to-talk entry points (called on main)
+    // MARK: - Recording entry points (called on main)
+
+    /// Toggle-to-talk: press once to start, press again to stop and transcribe.
+    /// Reuses the hold-mode start/stop paths verbatim, so the indicator,
+    /// min/max-duration guards, and transcription flow are identical.
+    func toggleRecording() {
+        if recorder.isRecording { stopRecordingAndTranscribe() }
+        else { startRecording() }   // startRecording already guards !isBusy
+    }
 
     func startRecording() {
         guard !isBusy else { return }

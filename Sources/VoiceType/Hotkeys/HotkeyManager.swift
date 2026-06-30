@@ -4,24 +4,32 @@ import AppKit
 
 /// Global hotkey monitoring via a `CGEventTap` (requires Accessibility).
 ///
-/// Phase 1 wires **hold-to-talk**: press the hold key to start recording,
-/// release to transcribe. The default key is a modifier (Right Option), which
-/// the system reports via `flagsChanged` rather than keyDown/keyUp — so we
-/// detect press/release using the device-specific modifier bit. Toggle and
-/// Esc-cancel are added in Phase 2; the structure leaves room for them.
+/// Wires **hold-to-talk** (press the hold key to start recording, release to
+/// transcribe) and **toggle-to-talk** (press once to start, press again to
+/// stop). Both bindings are rebindable via config. Different binding forms are
+/// reported differently by the system — pure-modifier combos and single
+/// modifiers arrive as `flagsChanged`, regular keys as keyDown/keyUp — so the
+/// per-event satisfaction rules and press/release edge detection live in the
+/// pure `HotkeyMatcher`/`EdgeDetector` helpers; this class just feeds them
+/// events from the tap and fans edges out to the callbacks. Esc-cancel is
+/// added in Phase 2, Task 3; the structure leaves room for it.
 final class HotkeyManager {
     private(set) var hold: KeyBinding
+    let toggle: KeyBinding
 
     /// Fired on the main thread.
     var onHoldStart: (() -> Void)?
     var onHoldStop: (() -> Void)?
+    var onTogglePress: (() -> Void)?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
-    private var holdActive = false
+    private var holdEdge = EdgeDetector()
+    private var toggleEdge = EdgeDetector()
 
-    init(hold: KeyBinding) {
+    init(hold: KeyBinding, toggle: KeyBinding) {
         self.hold = hold
+        self.toggle = toggle
     }
 
     /// Installs the event tap. Returns false if creation failed (almost always
@@ -63,7 +71,8 @@ final class HotkeyManager {
         if let source = runLoopSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
         eventTap = nil
         runLoopSource = nil
-        holdActive = false
+        holdEdge = EdgeDetector()
+        toggleEdge = EdgeDetector()
     }
 
     // MARK: - Event handling (called from the tap callback on the main run loop)
@@ -74,34 +83,31 @@ final class HotkeyManager {
             return
         }
 
-        // Modifier-combo hold (e.g. fn+Shift): no main key, so keyCode < 0. We
-        // evaluate the whole modifier set on every flagsChanged. Because these
-        // are pure modifiers, nothing is ever typed into the focused field.
-        if hold.keyCode < 0, !hold.modifiers.isEmpty {
-            guard type == .flagsChanged else { return }
-            let required = Self.flags(for: hold.modifiers)
-            setHold(!required.isEmpty && event.flags.isSuperset(of: required))
-            return
-        }
-
+        // Decode the event once, then drive each binding's edge detector off the
+        // pure satisfaction rules. Pure-modifier combos type nothing; regular
+        // keys still pass through (the tap is listen-only).
         let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
+        let isAutorepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+        let flags = event.flags
 
-        if Self.isModifierKeyCode(hold.keyCode) {
-            guard type == .flagsChanged, keyCode == hold.keyCode else { return }
-            let pressed = (event.flags.rawValue & Self.deviceBit(for: hold.keyCode)) != 0
-            setHold(pressed)
-        } else {
-            if type == .keyDown, keyCode == hold.keyCode { setHold(true) }
-            else if type == .keyUp, keyCode == hold.keyCode { setHold(false) }
+        let holdReading = HotkeyMatcher.satisfaction(
+            of: hold, eventType: type, keyCode: keyCode, flags: flags, isAutorepeat: isAutorepeat)
+        switch holdEdge.update(with: holdReading) {
+        case .press:   emit(onHoldStart)
+        case .release: emit(onHoldStop)
+        case nil:      break
         }
+
+        let toggleReading = HotkeyMatcher.satisfaction(
+            of: toggle, eventType: type, keyCode: keyCode, flags: flags, isAutorepeat: isAutorepeat)
+        // Toggle fires on the press edge only, exactly once per physical press.
+        if toggleEdge.update(with: toggleReading) == .press { emit(onTogglePress) }
     }
 
-    private func setHold(_ active: Bool) {
-        guard active != holdActive else { return }
-        holdActive = active
-        DispatchQueue.main.async { [weak self] in
-            active ? self?.onHoldStart?() : self?.onHoldStop?()
-        }
+    /// Hops a callback to the main thread, matching the rest of the app.
+    private func emit(_ callback: (() -> Void)?) {
+        guard let callback else { return }
+        DispatchQueue.main.async { callback() }
     }
 
     // MARK: - Modifier key helpers

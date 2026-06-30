@@ -90,6 +90,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hold.isEnabled = false
         menu.addItem(hold)
 
+        let toggle = NSMenuItem(title: "Toggle to talk: \(HotkeyDescription.describe(configStore.config.toggle))",
+                                action: nil, keyEquivalent: "")
+        toggle.isEnabled = false
+        menu.addItem(toggle)
+
         let openConfig = NSMenuItem(title: "Open Config File…", action: #selector(openConfig), keyEquivalent: "")
         openConfig.target = self
         menu.addItem(openConfig)
@@ -197,12 +202,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             dictation = DictationController(transcriber: transcriber, configStore: configStore)
         }
         if hotkeys == nil {
-            let manager = HotkeyManager(hold: configStore.config.hold)
+            let manager = HotkeyManager(hold: configStore.config.hold, toggle: configStore.config.toggle)
             manager.onHoldStart = { [weak self] in self?.dictation?.startRecording() }
             manager.onHoldStop = { [weak self] in self?.dictation?.stopRecordingAndTranscribe() }
+            manager.onTogglePress = { [weak self] in self?.dictation?.toggleRecording() }
             if manager.start() {
                 hotkeys = manager
-                Log.info("VoiceType is ready. Hold \(HotkeyDescription.describe(configStore.config.hold)) to dictate.")
+                Log.info("VoiceType is ready. Hold \(HotkeyDescription.describe(configStore.config.hold)) or press \(HotkeyDescription.describe(configStore.config.toggle)) to dictate.")
             } else {
                 return   // tap failed (Accessibility); try again on next tick
             }
