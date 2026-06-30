@@ -1,7 +1,7 @@
 import Foundation
 
 /// A global key binding. Three forms:
-/// - **Modifier combo** (default hold = fn+Shift): `keyCode < 0`, `modifiers`
+/// - **Modifier combo** (default hold = Control+Shift): `keyCode < 0`, `modifiers`
 ///   lists the pure modifiers that must be held together. Types nothing.
 /// - **Single modifier** (e.g. Right Option): `modifiers` empty, `keyCode` is the
 ///   modifier's key code; left/right is distinguished via the device bit.

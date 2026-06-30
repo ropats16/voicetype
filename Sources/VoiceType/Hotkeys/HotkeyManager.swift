@@ -5,16 +5,17 @@ import AppKit
 /// Global hotkey monitoring via a `CGEventTap` (requires Accessibility).
 ///
 /// Wires **hold-to-talk** (press the hold key to start recording, release to
-/// transcribe) and **toggle-to-talk** (press once to start, press again to
-/// stop). Both bindings are rebindable via config. Different binding forms are
-/// reported differently by the system — pure-modifier combos and single
-/// modifiers arrive as `flagsChanged`, regular keys as keyDown/keyUp — so the
-/// per-event satisfaction rules and press/release edge detection live in the
-/// pure `HotkeyMatcher`/`EdgeDetector` helpers; this class just feeds them
-/// events from the tap and fans edges out to the callbacks. Esc-cancel is
-/// added in Phase 2, Task 3; the structure leaves room for it.
+/// transcribe; fires on both edges), **toggle-to-talk** (press once to start,
+/// press again to stop; fires on the press edge only), and **Esc/cancel-key**
+/// handling (a plain key-down on `cancelKeyCode` fires `onCancel`). Bindings are
+/// rebindable via config. Different binding forms are reported differently by
+/// the system — pure-modifier combos and single modifiers arrive as
+/// `flagsChanged`, regular keys as keyDown/keyUp — so the per-event satisfaction
+/// rules and press/release edge detection live in the pure
+/// `HotkeyMatcher`/`EdgeDetector` helpers; this class just feeds them events
+/// from the tap and fans edges out to the callbacks.
 final class HotkeyManager {
-    private(set) var hold: KeyBinding
+    let hold: KeyBinding
     let toggle: KeyBinding
     /// Key code (default Esc = 53) that cancels an in-progress recording.
     let cancelKeyCode: Int
@@ -87,6 +88,11 @@ final class HotkeyManager {
     func handle(type: CGEventType, event: CGEvent) {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: true) }
+            // Events were dropped while the tap was off, so a release edge may
+            // have been missed mid-keypress. Reset both detectors (as in stop())
+            // to a clean state; both hold and toggle depend on edge tracking.
+            holdEdge = EdgeDetector()
+            toggleEdge = EdgeDetector()
             return
         }
 

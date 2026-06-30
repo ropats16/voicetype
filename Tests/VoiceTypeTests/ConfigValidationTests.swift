@@ -21,14 +21,14 @@ final class ConfigValidationTests: XCTestCase {
                       "The shipped defaults must validate cleanly")
     }
 
-    func testValidationDoesNotMutateConfig() {
+    func testValidationIsDeterministic() {
         var config = Config.defaults
         config.toggle = config.hold            // an intentionally invalid config
         config.maxRecordingSeconds = -1
-        let before = config
-        _ = ConfigValidator.validate(config)
-        XCTAssertEqual(before.toggle, config.toggle)
-        XCTAssertEqual(before.maxRecordingSeconds, config.maxRecordingSeconds)
+        let first = ConfigValidator.validate(config)
+        let second = ConfigValidator.validate(config)
+        XCTAssertEqual(first, second,
+                       "Validating the same config twice must yield identical issues")
     }
 
     // MARK: - Error — hold == toggle

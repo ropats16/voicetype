@@ -110,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if hasConfigErrors {
-            let configIssue = NSMenuItem(title: "⚠️ Config: \(configIssueCount) binding issue(s) — see log", action: nil, keyEquivalent: "")
+            let configIssue = NSMenuItem(title: "⚠️ Config: \(configIssueCount) config issue(s) — see log", action: nil, keyEquivalent: "")
             configIssue.isEnabled = false
             menu.addItem(configIssue)
         }
