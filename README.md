@@ -13,7 +13,7 @@ Terminal, and the Claude Code CLI. Nothing leaves your machine.
 
 ## What it does
 
-- **Hold-to-talk:** hold the hotkey (default **fn + Shift**) to record;
+- **Hold-to-talk:** hold the hotkey (default **Control + Shift**) to record;
   release to transcribe and insert at your cursor.
 - **On-screen indicator** near the caret: a live waveform while recording, a
   spinner while transcribing, then it disappears.
@@ -80,7 +80,7 @@ links to the right Settings pane:
    Open **System Settings → Privacy & Security → Accessibility** and enable
    **VoiceType**.
 
-Grant both, and the menu-bar status flips to **Ready**. Then hold **fn + Shift**,
+Grant both, and the menu-bar status flips to **Ready**. Then hold **Control + Shift**,
 speak, and release.
 
 > **Note on permissions persisting:** macOS ties these grants to the app's code
@@ -109,10 +109,13 @@ Open it from the menu bar (**Open Config File…**). Keys:
 | `language`            | `en`.                                                      |
 | `threads`             | Inference threads; `0` = auto.                            |
 
-The default hold key is **fn + Shift** — a pure-modifier combo (`keyCode: -1`,
-`modifiers: ["function","shift"]`) chosen so it never types a character into the
-focused field. A single modifier like Right Option (`keyCode: 61`, no modifiers)
-also works. Toggle mode, Esc to cancel, and full rebinding land in Phase 2.
+The default hold key is **Control + Shift** — a pure-modifier combo (`keyCode: -1`,
+`modifiers: ["control","shift"]`) chosen so it never types a character into the
+focused field and is reliably delivered to the event tap. Other no-character
+options: `["control","option"]` (⌃⌥), `["function","shift"]` (fn+Shift, but the
+Globe key is intercepted on some Macs), or a single modifier like Right Option
+(`keyCode: 61`, no modifiers). Toggle mode, Esc to cancel, and full rebinding
+land in Phase 2.
 
 ---
 

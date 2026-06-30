@@ -11,8 +11,12 @@ struct KeyBinding: Codable, Equatable {
     var keyCode: Int
     var modifiers: [String]   // any of: "command", "option", "control", "shift", "function"
 
-    /// fn + Shift — default hold-to-talk. A pure-modifier combo, so it never
-    /// inserts a character into the focused field (unlike a Space-based combo).
+    /// Control + Shift — default hold-to-talk. A pure-modifier combo, so it
+    /// never inserts a character into the focused field, and (unlike fn/Globe)
+    /// both modifiers are reliably delivered to the event tap.
+    static let controlShift = KeyBinding(keyCode: -1, modifiers: ["control", "shift"])
+    /// fn + Shift — alternative combo; note the Globe/fn key is intercepted by
+    /// the system on some Macs and may not reach the event tap.
     static let fnShift = KeyBinding(keyCode: -1, modifiers: ["function", "shift"])
     /// Right Option (⌥) — alternative single-modifier hold.
     static let rightOption = KeyBinding(keyCode: 61, modifiers: [])
@@ -39,7 +43,7 @@ struct Config: Codable {
     static var defaults: Config {
         Config(
             modelPath: Paths.defaultModelFile.path,
-            hold: .fnShift,
+            hold: .controlShift,
             toggle: .controlOptionSpace,
             cancelKeyCode: 53,
             maxRecordingSeconds: 120,
