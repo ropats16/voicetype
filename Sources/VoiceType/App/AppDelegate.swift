@@ -206,6 +206,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// Human-readable key binding labels for the menu.
 enum HotkeyDescription {
     static func describe(_ binding: KeyBinding) -> String {
+        // Pure modifier combo (no main key), e.g. fn+Shift.
+        if binding.keyCode < 0 {
+            return binding.modifiers.map { symbol(for: $0) }.joined(separator: " ")
+        }
         if binding.modifiers.isEmpty, let name = modifierKeyName(binding.keyCode) {
             return name
         }
@@ -233,6 +237,7 @@ enum HotkeyDescription {
         case "option": return "⌥"
         case "control": return "⌃"
         case "shift": return "⇧"
+        case "function", "fn", "globe": return "fn"
         default: return ""
         }
     }

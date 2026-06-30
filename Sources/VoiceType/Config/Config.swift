@@ -1,12 +1,20 @@
 import Foundation
 
-/// A global key binding. For modifier-only triggers (e.g. Right Option as
-/// hold-to-talk) `modifiers` is empty and `keyCode` is the modifier's key code.
+/// A global key binding. Three forms:
+/// - **Modifier combo** (default hold = fn+Shift): `keyCode < 0`, `modifiers`
+///   lists the pure modifiers that must be held together. Types nothing.
+/// - **Single modifier** (e.g. Right Option): `modifiers` empty, `keyCode` is the
+///   modifier's key code; left/right is distinguished via the device bit.
+/// - **Regular key + modifiers** (e.g. ⌃⌥Space): `keyCode` is the key, with
+///   `modifiers`.
 struct KeyBinding: Codable, Equatable {
     var keyCode: Int
-    var modifiers: [String]   // any of: "command", "option", "control", "shift"
+    var modifiers: [String]   // any of: "command", "option", "control", "shift", "function"
 
-    /// Right Option (⌥) — default hold-to-talk key. Reported on flagsChanged.
+    /// fn + Shift — default hold-to-talk. A pure-modifier combo, so it never
+    /// inserts a character into the focused field (unlike a Space-based combo).
+    static let fnShift = KeyBinding(keyCode: -1, modifiers: ["function", "shift"])
+    /// Right Option (⌥) — alternative single-modifier hold.
     static let rightOption = KeyBinding(keyCode: 61, modifiers: [])
     /// ⌃⌥Space — default toggle key (wired in Phase 2).
     static let controlOptionSpace = KeyBinding(keyCode: 49, modifiers: ["control", "option"])
@@ -31,7 +39,7 @@ struct Config: Codable {
     static var defaults: Config {
         Config(
             modelPath: Paths.defaultModelFile.path,
-            hold: .rightOption,
+            hold: .fnShift,
             toggle: .controlOptionSpace,
             cancelKeyCode: 53,
             maxRecordingSeconds: 120,

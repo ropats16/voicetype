@@ -74,6 +74,16 @@ final class HotkeyManager {
             return
         }
 
+        // Modifier-combo hold (e.g. fn+Shift): no main key, so keyCode < 0. We
+        // evaluate the whole modifier set on every flagsChanged. Because these
+        // are pure modifiers, nothing is ever typed into the focused field.
+        if hold.keyCode < 0, !hold.modifiers.isEmpty {
+            guard type == .flagsChanged else { return }
+            let required = Self.flags(for: hold.modifiers)
+            setHold(!required.isEmpty && event.flags.isSuperset(of: required))
+            return
+        }
+
         let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
 
         if Self.isModifierKeyCode(hold.keyCode) {
@@ -95,6 +105,22 @@ final class HotkeyManager {
     }
 
     // MARK: - Modifier key helpers
+
+    /// Combined `CGEventFlags` for a set of modifier names (used by combo holds).
+    static func flags(for modifiers: [String]) -> CGEventFlags {
+        var flags: CGEventFlags = []
+        for modifier in modifiers {
+            switch modifier.lowercased() {
+            case "command", "cmd": flags.insert(.maskCommand)
+            case "option", "alt": flags.insert(.maskAlternate)
+            case "control", "ctrl": flags.insert(.maskControl)
+            case "shift": flags.insert(.maskShift)
+            case "function", "fn", "globe": flags.insert(.maskSecondaryFn)
+            default: break
+            }
+        }
+        return flags
+    }
 
     /// Modifier virtual key codes that are reported via flagsChanged.
     static func isModifierKeyCode(_ keyCode: Int) -> Bool {
