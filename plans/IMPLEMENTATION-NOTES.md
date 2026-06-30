@@ -58,6 +58,29 @@ Key facts (current whisper.cpp has **no Package.swift**, so we vendor sources):
 - `VoiceType --selftest --model <ggml.bin> --wav <16kHz.wav>` loads the model and
   transcribes a WAV (no UI/permissions). Used to verify the engine.
 
+## Code signing & TCC persistence (grants survive rebuilds)
+- **Problem:** ad-hoc signing (`codesign -s -`) gives a new CDHash every build,
+  and TCC pins Accessibility to the CDHash → each `make install` silently revoked
+  the grant.
+- **Fix:** `scripts/create_signing_cert.sh` creates a one-time **self-signed
+  code-signing certificate** ("VoiceType Self-Signed") in a dedicated local
+  keychain (`~/Library/Keychains/voicetype-signing.keychain-db`, password
+  `voicetype-local` — not a secret). `package_app.sh` signs with it (falls back to
+  ad-hoc if absent). The designated requirement becomes
+  `identifier "com.local.VoiceType" and certificate leaf = H"<cert hash>"` —
+  **stable across rebuilds**, so the grant persists.
+- **Gotchas learned:**
+  - Use **`/usr/bin/openssl` (LibreSSL)**, not Homebrew OpenSSL 3 — OpenSSL 3
+    writes a PKCS12 MAC `security import` can't verify ("MAC verification failed").
+  - The cert is self-signed → untrusted (`CSSMERR_TP_NOT_TRUSTED`), so
+    `security find-identity -v` (valid-only) does NOT list it. Use
+    `security find-identity -p codesigning` (no `-v`). codesign still signs with it
+    (trust only matters for Gatekeeper, not for signing or the TCC DR).
+  - Switching identity (adhoc→cert) changes the DR, so reset once after the switch:
+    `tccutil reset Accessibility com.local.VoiceType`, relaunch, grant again. From
+    then on it persists.
+  - Undo entirely: `security delete-keychain ~/Library/Keychains/voicetype-signing.keychain-db`.
+
 ## Phase 1 status
 Done & compiling (debug+release): config, permissions, audio capture, hotkey (hold =
 Right ⌥ via flagsChanged + device bit), text insertion (paste+restore), indicator

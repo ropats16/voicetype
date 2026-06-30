@@ -177,8 +177,10 @@ After editing, relaunch VoiceType (quit from the menu, reopen from Applications)
 ## Troubleshooting
 
 **“I granted Accessibility but it still says Not granted.”**
-This happens after rebuilding the app: the app is re-signed and macOS no longer
-recognizes the old permission. Reset it once and grant again:
+Setup signs the app with a **stable self-signed certificate**, so once you grant
+Accessibility it should keep working across rebuilds. If it ever gets stuck
+(e.g. you built once before the certificate existed), reset it once and grant
+again:
 
 ```sh
 pkill -x VoiceType                                  # quit the app
@@ -188,8 +190,7 @@ open /Applications/VoiceType.app                    # relaunch
 
 Then re-grant Accessibility in **System Settings → Privacy & Security →
 Accessibility** (remove any old "VoiceType" entry with the **–** button first,
-then toggle the new one on). *(A permanent fix that survives rebuilds — signing
-with a stable certificate — is on the roadmap.)*
+then toggle the new one on).
 
 **The hotkey does nothing.**
 Make sure the menu says **Ready** (both permissions granted). If your chosen
