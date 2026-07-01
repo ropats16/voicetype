@@ -41,6 +41,8 @@ final class SettingsViewModelTests: XCTestCase {
     private var configStore: ConfigStore!
     private var fakeLogin: FakeLoginItemService!
     private var menuRefreshCount = 0
+    private var reloadCount = 0
+    private var pauseCount = 0
 
     override func setUp() {
         super.setUp()
@@ -49,6 +51,8 @@ final class SettingsViewModelTests: XCTestCase {
         configStore = ConfigStore(url: tempURL)
         fakeLogin = FakeLoginItemService()
         menuRefreshCount = 0
+        reloadCount = 0
+        pauseCount = 0
     }
 
     override func tearDown() {
@@ -56,7 +60,7 @@ final class SettingsViewModelTests: XCTestCase {
         super.tearDown()
     }
 
-    // MARK: - Helper
+    // MARK: - Helpers
 
     private func makeVM(
         mics: [AudioInputDevice] = [],
@@ -70,6 +74,19 @@ final class SettingsViewModelTests: XCTestCase {
             onNeedsMenuRefresh: { [weak self] in self?.menuRefreshCount += 1 },
             pauseHotkeys: {},
             reloadHotkeys: {}
+        )
+    }
+
+    /// VM variant that wires spy closures for `pauseHotkeys` and `reloadHotkeys`.
+    private func makeVMWithSpies() -> SettingsViewModel {
+        SettingsViewModel(
+            configStore: configStore,
+            loginItem: LoginItem(service: fakeLogin),
+            availableMics: { [] },
+            presentModelFilenames: { Set() },
+            onNeedsMenuRefresh: { [weak self] in self?.menuRefreshCount += 1 },
+            pauseHotkeys: { [weak self] in self?.pauseCount += 1 },
+            reloadHotkeys: { [weak self] in self?.reloadCount += 1 }
         )
     }
 
@@ -158,5 +175,103 @@ final class SettingsViewModelTests: XCTestCase {
         vm.setLaunchAtLogin(true)
         XCTAssertFalse(vm.launchAtLogin, "launchAtLogin must revert to false on error")
         XCTAssertNotNil(vm.loginError, "loginError must be set after a failed register()")
+    }
+
+    // MARK: - beginHotkeyCapture
+
+    func testBeginHotkeyCaptureFiresPauseAndSetsCapturing() {
+        let vm = makeVMWithSpies()
+        vm.beginHotkeyCapture()
+        XCTAssertEqual(pauseCount, 1, "beginHotkeyCapture must call pauseHotkeys")
+        XCTAssertTrue(vm.isCapturing, "isCapturing must be true after beginHotkeyCapture")
+    }
+
+    // MARK: - commitHotkey
+
+    func testCommitHotkeyPersistsBindingAndFiresCallbacks() {
+        let vm = makeVMWithSpies()
+        let newBinding = KeyBinding(keyCode: 49, modifiers: ["control", "option"])
+        vm.commitHotkey(newBinding, for: .hold)
+        XCTAssertEqual(configStore.config.hold, newBinding, "config.hold must be persisted")
+        XCTAssertEqual(vm.holdBinding, newBinding, "holdBinding must be updated")
+        XCTAssertGreaterThan(reloadCount, 0, "reloadHotkeys must be called")
+        XCTAssertGreaterThan(menuRefreshCount, 0, "onNeedsMenuRefresh must be called")
+        XCTAssertFalse(vm.isCapturing, "isCapturing must be false after commit")
+    }
+
+    func testCommitHotkeyTogglePersistsBinding() {
+        let vm = makeVMWithSpies()
+        let newBinding = KeyBinding(keyCode: -1, modifiers: ["control", "shift"])
+        vm.commitHotkey(newBinding, for: .toggle)
+        XCTAssertEqual(configStore.config.toggle, newBinding)
+        XCTAssertEqual(vm.toggleBinding, newBinding)
+    }
+
+    func testCommitHotkeyNilCancelsAndResumesWithoutMenuRefresh() {
+        let vm = makeVMWithSpies()
+        vm.beginHotkeyCapture()
+        let beforeMenuCount = menuRefreshCount
+        vm.commitHotkey(nil, for: .hold)
+        XCTAssertFalse(vm.isCapturing, "isCapturing must be false after cancel")
+        XCTAssertGreaterThan(reloadCount, 0, "reloadHotkeys must be called to resume tap")
+        XCTAssertEqual(menuRefreshCount, beforeMenuCount, "onNeedsMenuRefresh must NOT be called on cancel")
+    }
+
+    func testCommitHotkeyConflictSetsWarning() {
+        // Setting hold == current toggle → ConfigValidator detects conflict → hotkeyWarning != nil
+        let vm = makeVMWithSpies()
+        let conflicting = configStore.config.toggle   // same as toggle default
+        vm.commitHotkey(conflicting, for: .hold)
+        XCTAssertNotNil(vm.hotkeyWarning, "hotkeyWarning must be set when hold == toggle")
+    }
+
+    func testCommitHotkeyNoConflictClearsWarning() {
+        let vm = makeVMWithSpies()
+        // First create a conflict, then resolve it
+        let conflicting = configStore.config.toggle
+        vm.commitHotkey(conflicting, for: .hold)
+        XCTAssertNotNil(vm.hotkeyWarning)
+        // Now restore defaults
+        vm.resetHotkey(.hold)
+        XCTAssertNil(vm.hotkeyWarning, "hotkeyWarning must be nil when bindings are valid")
+    }
+
+    // MARK: - resetHotkey
+
+    func testResetHotkeyHoldRestoresControlShift() {
+        // Change hold to something non-default first
+        configStore.update { $0.hold = KeyBinding(keyCode: 36, modifiers: []) }
+        let vm = makeVMWithSpies()
+        vm.resetHotkey(.hold)
+        XCTAssertEqual(configStore.config.hold, .controlShift)
+        XCTAssertEqual(vm.holdBinding, .controlShift)
+    }
+
+    func testResetHotkeyToggleRestoresControlOptionSpace() {
+        configStore.update { $0.toggle = KeyBinding(keyCode: 36, modifiers: []) }
+        let vm = makeVMWithSpies()
+        vm.resetHotkey(.toggle)
+        XCTAssertEqual(configStore.config.toggle, .controlOptionSpace)
+        XCTAssertEqual(vm.toggleBinding, .controlOptionSpace)
+    }
+
+    func testResetHotkeyFiresReloadAndMenuRefresh() {
+        let vm = makeVMWithSpies()
+        vm.resetHotkey(.hold)
+        XCTAssertGreaterThan(reloadCount, 0)
+        XCTAssertGreaterThan(menuRefreshCount, 0)
+    }
+
+    // MARK: - holdDescription / toggleDescription
+
+    func testHoldDescriptionMatchesDefaultControlShift() {
+        let vm = makeVM()
+        // .controlShift → keyCode -1, ["control","shift"] → "⌃ ⇧" or similar via HotkeyDescription
+        XCTAssertFalse(vm.holdDescription.isEmpty)
+    }
+
+    func testToggleDescriptionMatchesDefaultControlOptionSpace() {
+        let vm = makeVM()
+        XCTAssertFalse(vm.toggleDescription.isEmpty)
     }
 }

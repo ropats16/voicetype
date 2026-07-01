@@ -1,6 +1,9 @@
 import Foundation
 import Combine
 
+/// Which hotkey binding is being edited or captured.
+enum HotkeyTarget { case hold, toggle }
+
 /// View-model for the settings window. `@MainActor` so `@Published` mutations
 /// are always on the main thread and SwiftUI bindings update correctly.
 ///
@@ -30,6 +33,17 @@ final class SettingsViewModel: ObservableObject {
     @Published private(set) var loginError: String?
     @Published private(set) var modelChangeNeedsRestart: Bool = false
 
+    // MARK: - Hotkey display state (Task 4b)
+
+    /// Current hold binding — reflects the persisted config value.
+    @Published private(set) var holdBinding: KeyBinding
+    /// Current toggle binding — reflects the persisted config value.
+    @Published private(set) var toggleBinding: KeyBinding
+    /// Non-nil when `ConfigValidator` finds a hold/toggle conflict after a change.
+    @Published private(set) var hotkeyWarning: String?
+    /// True while a live key-capture session is in progress (global tap is suspended).
+    @Published private(set) var isCapturing: Bool = false
+
     // MARK: - Init
 
     init(configStore: ConfigStore,
@@ -52,6 +66,8 @@ final class SettingsViewModel: ObservableObject {
         self.launchAtLogin = loginItem.isEnabled
         self.selectedMicUID = cfg.microphoneUID
         self.selectedModelSize = ModelCatalog.selectedSize(modelPath: cfg.modelPath)
+        self.holdBinding = cfg.hold
+        self.toggleBinding = cfg.toggle
     }
 
     // MARK: - Intent methods (call from the View; avoids two-way Binding loops)
@@ -103,4 +119,71 @@ final class SettingsViewModel: ObservableObject {
 
     /// Full model catalog with download status (re-queried each access).
     var modelEntries: [ModelCatalogEntry] { ModelCatalog.entries(presentFilenames: presentModelFilenames()) }
+
+    /// Human-readable label for the current hold binding (e.g. "⌃⇧").
+    var holdDescription: String   { HotkeyDescription.describe(holdBinding) }
+    /// Human-readable label for the current toggle binding (e.g. "⌃⌥Space").
+    var toggleDescription: String { HotkeyDescription.describe(toggleBinding) }
+
+    // MARK: - Hotkey intent methods (Task 4b)
+
+    /// Suspends the global event tap so keys pressed during capture don't fire
+    /// dictation. Sets `isCapturing` so the UI can show its "Recording…" state.
+    func beginHotkeyCapture() {
+        pauseHotkeys()
+        isCapturing = true
+    }
+
+    /// Commits a captured binding (or cancels if `binding` is nil). Persists the
+    /// new value for `target`, re-registers the event tap, refreshes the menu, and
+    /// recomputes `hotkeyWarning`. On cancel (`nil`), only the tap is resumed.
+    func commitHotkey(_ binding: KeyBinding?, for target: HotkeyTarget) {
+        if let binding {
+            switch target {
+            case .hold:
+                configStore.update { $0.hold = binding }
+                holdBinding = binding
+            case .toggle:
+                configStore.update { $0.toggle = binding }
+                toggleBinding = binding
+            }
+            isCapturing = false
+            reloadHotkeys()
+            onNeedsMenuRefresh()
+            updateHotkeyWarning()
+        } else {
+            // User cancelled — resume the tap with the config unchanged.
+            isCapturing = false
+            reloadHotkeys()
+        }
+    }
+
+    /// Resets a binding to its documented default (hold → ⌃⇧, toggle → ⌃⌥Space).
+    /// This is the "combo didn't work" fallback; applies live and refreshes the menu.
+    func resetHotkey(_ target: HotkeyTarget) {
+        switch target {
+        case .hold:
+            let binding = KeyBinding.controlShift
+            configStore.update { $0.hold = binding }
+            holdBinding = binding
+        case .toggle:
+            let binding = KeyBinding.controlOptionSpace
+            configStore.update { $0.toggle = binding }
+            toggleBinding = binding
+        }
+        isCapturing = false
+        reloadHotkeys()
+        onNeedsMenuRefresh()
+        updateHotkeyWarning()
+    }
+
+    // MARK: - Private helpers
+
+    /// Surfaces the first hold/toggle config issue as a user-visible warning.
+    private func updateHotkeyWarning() {
+        let issues = ConfigValidator.validate(configStore.config)
+        hotkeyWarning = issues.first {
+            $0.message.contains("hold") || $0.message.contains("toggle")
+        }?.message
+    }
 }

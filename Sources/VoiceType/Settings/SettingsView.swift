@@ -1,10 +1,15 @@
 import SwiftUI
+import AppKit
 
 /// Native settings form for VoiceType. Bound to a `SettingsViewModel` via
 /// intent methods (no two-way Binding with didSet) so the view stays simple
 /// and initial load never re-persists config values.
 struct SettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
+    /// Manages the NSEvent local monitor for live hotkey capture. Its lifetime
+    /// is tied to this view (window); when the window closes, `onDisappear`
+    /// cancels any in-progress capture, removing the monitor.
+    @StateObject private var recorder = HotkeyRecorder()
 
     var body: some View {
         Form {
@@ -79,11 +84,66 @@ struct SettingsView: View {
                 Text("Model")
             }
 
-            // MARK: Hotkeys (placeholder for Task 4b)
-            // TODO: Task 4b will add the hotkey-capture controls here.
+            // MARK: Hotkeys
+            Section {
+                HotkeyRow(
+                    label: "Hold to talk",
+                    description: viewModel.holdDescription,
+                    isCapturing: recorder.captureTarget == .hold,
+                    onRecord: { recorder.startCapture(for: .hold, vm: viewModel) },
+                    onReset:  { viewModel.resetHotkey(.hold) }
+                )
+                HotkeyRow(
+                    label: "Toggle to talk",
+                    description: viewModel.toggleDescription,
+                    isCapturing: recorder.captureTarget == .toggle,
+                    onRecord: { recorder.startCapture(for: .toggle, vm: viewModel) },
+                    onReset:  { viewModel.resetHotkey(.toggle) }
+                )
+                if let warning = viewModel.hotkeyWarning {
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            } header: {
+                Text("Hotkeys")
+            }
         }
         .formStyle(.grouped)
         .frame(minWidth: 380, idealWidth: 420, minHeight: 380)
         .padding()
+        .onDisappear {
+            // Window closed mid-capture: remove the monitor and resume the tap.
+            recorder.cancelCapture(vm: viewModel)
+        }
+    }
+}
+
+// MARK: - HotkeyRow
+
+/// A single row in the Hotkeys section: shows the current binding, a Record
+/// button to start live capture, and a Reset-to-default fallback button.
+private struct HotkeyRow: View {
+    let label: String
+    let description: String
+    let isCapturing: Bool
+    let onRecord: () -> Void
+    let onReset: () -> Void
+
+    var body: some View {
+        HStack {
+            Text(label)
+            Spacer()
+            if isCapturing {
+                Text("Recording… press keys (Esc to cancel)")
+                    .foregroundColor(.secondary)
+                    .font(.callout)
+            } else {
+                Text(description)
+                    .foregroundColor(.secondary)
+                Button("Record") { onRecord() }
+            }
+            Button("Reset to default") { onReset() }
+        }
     }
 }
