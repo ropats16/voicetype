@@ -19,11 +19,26 @@ final class TextInserter {
     /// time to read the pasted contents.
     private let restoreDelay: TimeInterval = 0.2
 
+    /// Coordinates restores across overlapping `insert()` calls (rapid
+    /// successive dictations) so a burst collapses to exactly one correct
+    /// restore instead of each call's stale snapshot clobbering the others.
+    /// See `RestoreScheduler`.
+    private var restoreScheduler = RestoreScheduler()
+
+    /// The clipboard as it was before the first insert of the current burst.
+    /// Only valid while a restore is pending; set on the burst's first
+    /// `insert(_:)` and consumed by whichever restore ultimately fires.
+    private var originSnapshot = Snapshot(items: [])
+
     /// Writes `text` to the clipboard, pastes it, and restores the prior
     /// clipboard. Must be called on the main thread.
     func insert(_ text: String) {
         guard !text.isEmpty else { return }
-        let snapshot = capture()
+
+        let (shouldCaptureOrigin, token) = restoreScheduler.beginInsert()
+        if shouldCaptureOrigin {
+            originSnapshot = capture()
+        }
 
         let pb = NSPasteboard.general
         pb.clearContents()
@@ -32,7 +47,7 @@ final class TextInserter {
         synthesizePaste()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + restoreDelay) { [weak self] in
-            self?.restore(snapshot)
+            self?.restoreIfCurrent(token)
         }
     }
 
@@ -73,6 +88,14 @@ final class TextInserter {
             if !dict.isEmpty { items.append(dict) }
         }
         return Snapshot(items: items)
+    }
+
+    /// Restores `originSnapshot` iff `token` is still the most recently
+    /// issued one (i.e. this is the last insert of its burst) — a superseded
+    /// token is a no-op, per `RestoreScheduler`.
+    private func restoreIfCurrent(_ token: RestoreScheduler.Token) {
+        guard restoreScheduler.restoreFired(token) else { return }
+        restore(originSnapshot)
     }
 
     private func restore(_ snapshot: Snapshot) {
