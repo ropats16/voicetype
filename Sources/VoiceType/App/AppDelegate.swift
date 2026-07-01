@@ -5,11 +5,13 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let configStore = ConfigStore()
     private let permissions = Permissions()
+    private let loginItem = LoginItem()
 
     private var statusItem: NSStatusItem!
     private var hotkeys: HotkeyManager?
     private var dictation: DictationController?
     private var transcriber: Transcriber?
+    private var settingsWindowController: SettingsWindowController?
 
     private var readinessTimer: Timer?
 
@@ -94,6 +96,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 action: nil, keyEquivalent: "")
         toggle.isEnabled = false
         menu.addItem(toggle)
+
+        let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settings.target = self
+        menu.addItem(settings)
 
         let openConfig = NSMenuItem(title: "Open Config File…", action: #selector(openConfig), keyEquivalent: "")
         openConfig.target = self
@@ -210,16 +216,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             dictation = DictationController(transcriber: transcriber, configStore: configStore)
         }
         if hotkeys == nil {
-            let manager = HotkeyManager(hold: configStore.config.hold, toggle: configStore.config.toggle,
-                                        cancelKeyCode: configStore.config.cancelKeyCode)
-            manager.onHoldStart = { [weak self] in self?.dictation?.startRecording() }
-            manager.onHoldStop = { [weak self] in self?.dictation?.stopRecordingAndTranscribe() }
-            manager.onTogglePress = { [weak self] in self?.dictation?.toggleRecording() }
-            manager.onCancel = { [weak self] in self?.dictation?.cancelRecording() }
-            if manager.start() {
-                hotkeys = manager
-                Log.info("VoiceType is ready. Hold \(HotkeyDescription.describe(configStore.config.hold)) or press \(HotkeyDescription.describe(configStore.config.toggle)) to dictate.")
-            } else {
+            reloadHotkeys()
+            if hotkeys == nil {
                 return   // tap failed (Accessibility); try again on next tick
             }
         }
@@ -229,7 +227,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         readinessTimer = nil
     }
 
+    /// Stops any running hotkey tap, builds a fresh `HotkeyManager` from the
+    /// current config, wires the dictation callbacks, and starts it. Sets
+    /// `hotkeys` only if `start()` succeeds (so `evaluateReadiness()` can detect
+    /// failure and retry on the next timer tick).
+    private func reloadHotkeys() {
+        hotkeys?.stop()
+        hotkeys = nil
+        let manager = HotkeyManager(hold: configStore.config.hold,
+                                    toggle: configStore.config.toggle,
+                                    cancelKeyCode: configStore.config.cancelKeyCode)
+        manager.onHoldStart = { [weak self] in self?.dictation?.startRecording() }
+        manager.onHoldStop = { [weak self] in self?.dictation?.stopRecordingAndTranscribe() }
+        manager.onTogglePress = { [weak self] in self?.dictation?.toggleRecording() }
+        manager.onCancel = { [weak self] in self?.dictation?.cancelRecording() }
+        if manager.start() {
+            hotkeys = manager
+            Log.info("VoiceType is ready. Hold \(HotkeyDescription.describe(configStore.config.hold)) or press \(HotkeyDescription.describe(configStore.config.toggle)) to dictate.")
+        }
+        // else: hotkeys remains nil; caller retries on next timer tick if applicable
+    }
+
+    /// Suspends the active hotkey tap without tearing down `dictation`. Used by
+    /// Task 4b during live hotkey capture so the tap doesn't swallow the chosen key.
+    private func pauseHotkeys() {
+        hotkeys?.stop()
+    }
+
     // MARK: - Menu actions
+
+    @objc private func openSettings() {
+        // Menu actions are always dispatched on the main thread; assume main
+        // actor so we can create @MainActor-isolated types synchronously.
+        MainActor.assumeIsolated {
+            if settingsWindowController == nil {
+                let vm = SettingsViewModel(
+                    configStore: configStore,
+                    loginItem: loginItem,
+                    availableMics: { AudioDevices.inputDevices() },
+                    presentModelFilenames: {
+                        Set((try? FileManager.default.contentsOfDirectory(
+                                atPath: Paths.modelsDir.path)) ?? [])
+                    },
+                    onNeedsMenuRefresh: { [weak self] in self?.rebuildMenu() },
+                    pauseHotkeys: { [weak self] in self?.pauseHotkeys() },
+                    reloadHotkeys: { [weak self] in self?.reloadHotkeys() }
+                )
+                settingsWindowController = SettingsWindowController(viewModel: vm)
+            }
+            settingsWindowController?.show()
+        }
+    }
 
     @objc private func openMicSettings() { permissions.openMicrophoneSettings() }
     @objc private func openAccessibilitySettings() {
