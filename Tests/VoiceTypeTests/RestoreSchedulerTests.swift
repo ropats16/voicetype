@@ -85,4 +85,29 @@ final class RestoreSchedulerTests: XCTestCase {
         XCTAssertFalse(scheduler.restoreFired(token),
                        "A restore token must not be able to fire a second time")
     }
+
+    // MARK: - cancelPending: copyOnly() invalidates a pending insert() restore
+
+    func testCancelPendingSupersedesPriorInsertsRestore() {
+        var scheduler = RestoreScheduler()
+
+        // Simulates insert() starting a burst: a restore is now pending.
+        let (shouldCapture, token) = scheduler.beginInsert()
+        XCTAssertTrue(shouldCapture)
+
+        // Simulates copyOnly() running before that restore fires.
+        scheduler.cancelPending()
+
+        // The regression: the stale, now-cancelled restore must be a no-op,
+        // not silently clobber whatever copyOnly() put on the clipboard.
+        XCTAssertFalse(scheduler.restoreFired(token),
+                       "A restore cancelled by copyOnly() must not fire and must not touch the pasteboard")
+
+        // A fresh burst after cancellation must start cleanly, not be stuck
+        // in a cancelled-but-still-pending state.
+        let (nextShouldCapture, nextToken) = scheduler.beginInsert()
+        XCTAssertTrue(nextShouldCapture,
+                      "After cancelPending(), the next insert() must start a fresh burst and capture a new origin snapshot")
+        XCTAssertTrue(scheduler.restoreFired(nextToken))
+    }
 }

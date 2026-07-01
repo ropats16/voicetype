@@ -22,12 +22,13 @@ final class TextInserter {
     /// Coordinates restores across overlapping `insert()` calls (rapid
     /// successive dictations) so a burst collapses to exactly one correct
     /// restore instead of each call's stale snapshot clobbering the others.
-    /// See `RestoreScheduler`.
+    /// See `RestoreScheduler`. Main-thread-only, like `insert(_:)`/`copyOnly(_:)`.
     private var restoreScheduler = RestoreScheduler()
 
     /// The clipboard as it was before the first insert of the current burst.
     /// Only valid while a restore is pending; set on the burst's first
     /// `insert(_:)` and consumed by whichever restore ultimately fires.
+    /// Main-thread-only, like `insert(_:)`/`copyOnly(_:)`.
     private var originSnapshot = Snapshot(items: [])
 
     /// Writes `text` to the clipboard, pastes it, and restores the prior
@@ -52,8 +53,13 @@ final class TextInserter {
     }
 
     /// Leaves `text` on the clipboard without pasting (no-field fallback,
-    /// expanded in Phase 3).
+    /// expanded in Phase 3). Must be called on the main thread.
     func copyOnly(_ text: String) {
+        // Cancel any restore still pending from a prior insert() — otherwise
+        // it could fire later and silently clobber the text we're about to
+        // put on the clipboard. See RestoreScheduler.cancelPending().
+        restoreScheduler.cancelPending()
+
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(text, forType: .string)

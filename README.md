@@ -21,6 +21,8 @@ and the Claude Code CLI. Nothing is ever sent to the internet.
   spinner while it transcribes, then it disappears.
 - **Works everywhere** by pasting (and restoring your clipboard afterward), so it
   works in browsers, native apps, terminals, and CLIs alike.
+- **Notifies you** on errors (mic unavailable, model missing, transcription
+  failure) and when no text field is focused, instead of failing silently.
 - **Menu-bar only** — a small 🎙️ icon, no Dock icon, stays out of your way.
 - **100% private.** The only time it uses the internet is the one-time model
   download during setup.
@@ -229,8 +231,9 @@ The model file isn't where `config.json` points. Run `make setup` (or
 file in `~/Library/Application Support/VoiceType/models/`.
 
 **Text doesn't appear after I speak.**
-Make sure a text field is actually focused (click into it first). Very short
-recordings (a fraction of a second) are ignored on purpose.
+If no text field is focused, VoiceType copies the transcript to your clipboard
+and shows a notification — click into a field first, or just paste with ⌘V.
+Very short recordings (a fraction of a second) are ignored on purpose.
 
 **Build failed.**
 Confirm the build tools are installed (`xcode-select --install`) and you're on

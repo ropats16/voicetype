@@ -45,4 +45,15 @@ struct RestoreScheduler {
         pendingGeneration = nil
         return true
     }
+
+    /// Call from `copyOnly(_:)`, before touching the pasteboard, to invalidate
+    /// any restore left pending by a prior `insert()`. Without this, a
+    /// `copyOnly()` that runs while an `insert()` restore is still in flight
+    /// would leave that restore free to fire later and silently overwrite
+    /// whatever `copyOnly()` just put on the clipboard. Marks any
+    /// previously-issued token as superseded, so a later `restoreFired(_:)`
+    /// for it returns `false`, same as if a newer insert had superseded it.
+    mutating func cancelPending() {
+        pendingGeneration = nil
+    }
 }
