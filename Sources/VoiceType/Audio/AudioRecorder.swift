@@ -24,6 +24,10 @@ final class AudioRecorder {
     /// Called on the audio thread with a 0...1 RMS level for the waveform UI.
     var onLevel: ((Float) -> Void)?
 
+    /// Core Audio UID of the preferred input device. `nil` means use whatever
+    /// the system selects as the default input. Set this before calling `start()`.
+    var preferredDeviceUID: String? = nil
+
     enum AudioError: LocalizedError {
         case noInputAvailable
         case converterInitFailed
@@ -44,6 +48,24 @@ final class AudioRecorder {
         lock.lock(); samples.removeAll(keepingCapacity: true); lock.unlock()
 
         let input = engine.inputNode
+
+        // Select the preferred device BEFORE reading the hardware format so
+        // that the converter is built against the chosen device's sample rate
+        // and channel layout. If the UID can't be resolved (e.g. device
+        // unplugged since the user picked it), we log and fall back to the
+        // system default — recording must never fail due to a bad UID.
+        if let uid = preferredDeviceUID {
+            if let deviceID = AudioDevices.deviceID(forUID: uid) {
+                do {
+                    try input.auAudioUnit.setDeviceID(deviceID)
+                } catch {
+                    Log.info("Could not select device '\(uid)': \(error.localizedDescription). Using default.")
+                }
+            } else {
+                Log.info("Preferred mic UID '\(uid)' not found; using system default.")
+            }
+        }
+
         let hwFormat = input.inputFormat(forBus: 0)
         guard hwFormat.sampleRate > 0, hwFormat.channelCount > 0 else {
             throw AudioError.noInputAvailable

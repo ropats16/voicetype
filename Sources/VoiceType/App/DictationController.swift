@@ -64,6 +64,8 @@ final class DictationController {
     func startRecording() {
         guard !isBusy else { return }
         do {
+            // Live-read config so a mic change in Settings takes effect next recording.
+            recorder.preferredDeviceUID = config.microphoneUID
             try recorder.start()
             indicator.showRecording()
             soundCues.play(.start)
