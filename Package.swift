@@ -1,5 +1,6 @@
 // swift-tools-version: 5.9
 import PackageDescription
+import Foundation  // FileManager, for the x86 conditional exclude below
 
 // whisper.cpp is vendored as a submodule under the CWhisper target so SwiftPM
 // can compile its sources directly (paths are relative to Sources/CWhisper).
@@ -129,7 +130,18 @@ let archSources = [
     "\(ggml)/ggml-cpu/arch/x86/repack.cpp",
     "\(ggml)/ggml-cpu/arch/x86/cpu-feats.cpp",
 ]
-let archExcludes: [String] = []
+// A real Intel Mac never generates ggml-metal-embed.metal (embed self-skips), so
+// on a clean x86 tree the exclude must be absent — listing a non-existent path
+// makes SwiftPM emit a non-fatal "Invalid Exclude … File not found" warning.
+// But the Apple-Silicon Rosetta dev-verify path (`arch -x86_64 swift build`)
+// runs against a tree that still holds the arm64-generated leftover; without the
+// exclude SwiftPM would auto-Metal-compile it into a dead default.metallib.
+// Conditional exclude satisfies both: exclude only if the file is actually here.
+// (Exclude string is target-relative; the existence check uses the package-root-
+// relative path since the manifest runs with CWD = package root.)
+let embedMetal = "ggml-metal-embed.metal"
+let archExcludes: [String] =
+    FileManager.default.fileExists(atPath: "Sources/CWhisper/\(embedMetal)") ? [embedMetal] : []
 let cMetalDefines: [CSetting] = []
 let cxxMetalDefines: [CXXSetting] = []
 let cArchFlags = ["-mavx2", "-mfma", "-mf16c"]

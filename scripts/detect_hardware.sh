@@ -143,6 +143,10 @@ main() {
     --arch)
       local arch
       arch="$(detect_arch)"
+      # Validate against the same {arm64,x86_64} allowlist that --metal/--model/
+      # report enforce (metal_for_arch is that gate), so an unknown arch fails
+      # with a consistent error + exit 1 instead of being echoed verbatim.
+      metal_for_arch "$arch" >/dev/null
       printf '%s\n' "$arch"
       ;;
     --metal)

@@ -45,6 +45,9 @@ CONFIG="$APP_SUPPORT/config.json"
 MODEL_FILE="$APP_SUPPORT/models/ggml-$MODEL.bin"
 if [[ -f "$CONFIG" ]]; then
   echo "✓ existing config preserved: $CONFIG"
+  echo "  note: model '$MODEL' was just downloaded ($MODEL_FILE), but your existing"
+  echo "        config's modelPath was left unchanged, so the app keeps using its"
+  echo "        current model. To switch, edit \"modelPath\" in $CONFIG."
 else
   mkdir -p "$APP_SUPPORT"
   printf '{\n  "modelPath": "%s"\n}\n' "$MODEL_FILE" > "$CONFIG"

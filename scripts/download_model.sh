@@ -11,7 +11,7 @@ set -euo pipefail
 
 MODEL="${1:-medium.en}"
 BASE_URL="${WHISPER_MODEL_BASE_URL:-https://huggingface.co/ggerganov/whisper.cpp/resolve/main}"
-MODELS_DIR="$HOME/Library/Application Support/VoiceType/models"
+MODELS_DIR="${VOICETYPE_APP_SUPPORT:-$HOME/Library/Application Support/VoiceType}/models"
 FILE="ggml-${MODEL}.bin"
 DEST="$MODELS_DIR/$FILE"
 
