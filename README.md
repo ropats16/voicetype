@@ -31,11 +31,26 @@ and the Claude Code CLI. Nothing is ever sent to the internet.
 
 ## Will it run on my Mac?
 
-- **Apple Silicon Mac (M1, M2, M3, M4 — any model from 2020 on):** ✅ ideal. The
-  default model transcribes a sentence in about a second.
+- **Apple Silicon Mac (M1, M2, M3, M4 — any model from 2020 on):** ✅ ideal.
+  Metal (GPU) accelerated; the default model transcribes a sentence in about a
+  second.
+- **Intel Mac:** ✅ supported. Runs CPU-only (no Metal), so it's slower — setup
+  automatically picks a smaller model to keep it responsive.
 - **macOS 14 (Sonoma) or newer** required.
 - **~2 GB free disk** for the default model.
-- Intel Macs: works but CPU-only and slower; not a priority for v1.
+
+**Setup auto-detects your chip + RAM and picks a default model for you** — no
+input needed. You can still override it (see
+[Setup step 3](#3-build-it-and-download-the-speech-model) and
+[Changing the model](#changing-the-model-or-hotkey)). What it picks:
+
+| Your Mac      | RAM     | Auto-picked model |
+|---------------|---------|-------------------|
+| Apple Silicon | ≥ 16 GB | `medium.en`       |
+| Apple Silicon | < 16 GB | `small.en`        |
+| Intel         | ≥ 16 GB | `small.en`        |
+| Intel         | 8–16 GB | `base.en`         |
+| Intel         | < 8 GB  | `tiny.en`         |
 
 <details>
 <summary>Model sizes & speed (you can change the model later)</summary>
@@ -45,7 +60,7 @@ and the Claude Code CLI. Nothing is ever sent to the internet.
 | `tiny.en`   | ~75 MB       | Fastest, least accurate. Good for testing.   |
 | `base.en`   | ~140 MB      | Light, low-RAM Macs.                          |
 | `small.en`  | ~460 MB      | Good balance.                                 |
-| `medium.en` | ~1.5 GB      | **Default.** Most accurate; instant on M-series. |
+| `medium.en` | ~1.5 GB      | **Default on 16 GB+ Apple Silicon.** Most accurate; instant on M-series. |
 
 On an Apple-Silicon Mac, every model runs faster than real time.
 </details>
@@ -82,12 +97,13 @@ is run from inside the `voicetype` folder.)
 make setup
 ```
 
-This fetches the speech engine, downloads the default `medium.en` model
-(**~1.5 GB — this part takes a while on the first run**), builds the app, and
-packages it. Let it finish.
+This fetches the speech engine, then **auto-detects your chip + RAM and
+downloads the matching model** (see the table above — on a typical Apple Silicon
+Mac that's `medium.en`, **~1.5 GB, which takes a while on the first run**), and
+finally builds and packages the app. Let it finish.
 
-> Want a faster, smaller download to try things out first? Run
-> `make setup MODEL=small.en` (or `tiny.en`) instead.
+> Want a specific model instead of the auto-pick? Pass `MODEL=`, e.g.
+> `make setup MODEL=small.en` (or `tiny.en`, `base.en`, `medium.en`).
 
 ### 4. Install the app
 
@@ -148,7 +164,9 @@ Settings live in a plain text file you can open from the menu
 ~/Library/Application Support/VoiceType/config.json
 ```
 
-**Switch to a different model:**
+**Switch to a different model.** Your starting model was auto-selected at setup
+from your chip + RAM; to change it, download another and point `config.json` at
+it:
 
 ```sh
 make model MODEL=small.en      # downloads it
@@ -156,6 +174,10 @@ make model MODEL=small.en      # downloads it
 
 Then set `"modelPath"` in `config.json` to the new file (same folder, named
 `ggml-small.en.bin`) and relaunch VoiceType.
+
+> Curious what setup would auto-pick for this Mac? Run
+> `scripts/detect_hardware.sh` — it reports the detected arch, RAM, and the
+> model it would choose (diagnostic only; it changes nothing).
 
 **Change the hotkey.** The `hold` setting is the trigger. The default is a
 pure-modifier combo (it types no character anywhere):
@@ -270,7 +292,30 @@ make clean        # remove build artifacts
 ```
 
 whisper.cpp is vendored as a git submodule under `Sources/CWhisper/whisper.cpp`
-and built purely with SwiftPM (no cmake). Its Metal shader is **embedded** into
-the binary at build time (no Xcode Metal toolchain needed) and compiled on the
-GPU at runtime, so the `.app` is self-contained. See
-`plans/IMPLEMENTATION-NOTES.md` for the durable build/integration details.
+and built purely with SwiftPM (no cmake).
+
+**The build is arch-conditional** — `Package.swift` branches on the arch of the
+machine running SwiftPM:
+
+- **Apple Silicon (`arm64`):** the Metal build, unchanged from before Phase 5.
+  whisper + ggml + the Metal backend, with the shader **embedded** into the
+  binary at build time (no Xcode Metal toolchain needed) and compiled on the GPU
+  at runtime, so the `.app` is self-contained.
+- **Intel (`x86_64`):** a CPU-only build — no Metal at all; x86 CPU kernels built
+  with AVX2/FMA/F16C plus the Accelerate/BLAS backend. `embed_metal_shader.sh`
+  self-skips on x86, so `make`/`setup`/`package` need no arch branching.
+
+Because the manifest branches on the **host** arch (not on any `--arch` flag),
+to exercise the Intel path on an Apple Silicon Mac you must run the whole
+toolchain under Rosetta:
+
+```sh
+arch -x86_64 swift build -c release
+```
+
+Don't use `swift build --arch x86_64` — that still runs the manifest as `arm64`
+and selects the Metal branch. Smoke-test the resulting x86 binary with the
+[`--selftest` check](#troubleshooting) (a plain `x86_64` binary runs under
+Rosetta automatically).
+
+See `plans/IMPLEMENTATION-NOTES.md` for the durable build/integration details.
