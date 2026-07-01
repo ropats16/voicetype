@@ -113,10 +113,15 @@ final class DictationController {
                 Log.info("Transcription was empty.")
                 return
             }
-            if caretLocator.hasFocusedEditableElement() {
+            switch caretLocator.focusVerdict() {
+            case .editable, .unknown:
+                // `.unknown` = the app exposed no focused element (e.g. an
+                // Electron app whose AX tree isn't up yet). Paste anyway rather
+                // than silently divert to the clipboard — best-effort ⌘V is the
+                // behaviour users expect and it works in every app we've seen.
                 inserter.insert(text)
-            } else {
-                Log.info("No focused editable field; copying instead of pasting.")
+            case .notEditable:
+                Log.info("Focused element isn't editable; copying instead of pasting.")
                 inserter.copyOnly(text)
                 Notifier.notify(title: "Dictation copied", body: "No text field is focused — paste with ⌘V.")
             }

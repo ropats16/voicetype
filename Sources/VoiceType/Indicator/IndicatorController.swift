@@ -8,22 +8,22 @@ private final class IndicatorPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// Owns the floating indicator: shows it near the caret while recording,
-/// switches it to the processing spinner, and dismisses it on completion.
-/// All methods must be called on the main thread.
+/// Owns the floating indicator: shows it while recording, switches it to the
+/// processing spinner, and dismisses it on completion. The pill is pinned to a
+/// fixed corner of the active screen. All methods must be called on the main
+/// thread.
 final class IndicatorController {
     private let model = IndicatorModel()
-    private let locator = CaretLocator()
     private var panel: IndicatorPanel?
 
-    /// Gap between the caret/element and the indicator.
-    private let gap: CGFloat = 6
+    /// Inset from the screen's visible edges.
+    private let edgeInset: CGFloat = 16
 
     func showRecording() {
         model.phase = .recording
         model.level = 0
         let panel = ensurePanel()
-        position(panel, near: locator.locate())
+        positionBottomLeft(panel)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { ctx in
@@ -77,36 +77,20 @@ final class IndicatorController {
         return panel
     }
 
-    /// Place the panel just below the target, clamped to the visible screen.
-    private func position(_ panel: IndicatorPanel, near target: CaretLocator.Target) {
-        // Re-fit in case content size changed.
+    /// Pin the panel to the bottom-left corner of whichever screen the mouse is
+    /// on. A single fixed spot by design — we deliberately don't chase the text
+    /// caret, because apps disagree about whether they report caret geometry to
+    /// the accessibility API, which made the indicator jump between the caret and
+    /// the mouse pointer from one app to the next.
+    private func positionBottomLeft(_ panel: IndicatorPanel) {
+        // Re-fit in case the content size changed (recording ↔ processing).
         if let hosting = panel.contentView {
-            let size = hosting.fittingSize
-            panel.setContentSize(size)
+            panel.setContentSize(hosting.fittingSize)
         }
-        let panelSize = panel.frame.size
-        let r = target.rect
-
-        var origin: CGPoint
-        switch target.source {
-        case .caret, .elementFrame:
-            // Below the caret/element, left-aligned.
-            origin = CGPoint(x: r.minX, y: r.minY - panelSize.height - gap)
-        case .mouse:
-            // Just above-right of the cursor.
-            origin = CGPoint(x: r.minX + 12, y: r.minY + 12)
-        case .screenCenter:
-            origin = CGPoint(x: r.midX - panelSize.width / 2, y: r.minY)
-        }
-
-        // Clamp to the screen that contains the target point.
-        let screen = NSScreen.screens.first {
-            $0.frame.contains(CGPoint(x: r.midX, y: r.midY))
-        } ?? NSScreen.main ?? NSScreen.screens.first
-        if let visible = screen?.visibleFrame {
-            origin.x = min(max(origin.x, visible.minX + 4), visible.maxX - panelSize.width - 4)
-            origin.y = min(max(origin.y, visible.minY + 4), visible.maxY - panelSize.height - 4)
-        }
-        panel.setFrameOrigin(origin)
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(mouse) }
+            ?? NSScreen.main ?? NSScreen.screens.first
+        let visible = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        panel.setFrameOrigin(CGPoint(x: visible.minX + edgeInset, y: visible.minY + edgeInset))
     }
 }
