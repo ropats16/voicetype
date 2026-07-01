@@ -26,6 +26,7 @@ final class SettingsWindowController {
                 defer: false
             )
             w.title = "VoiceType Settings"
+            w.isReleasedWhenClosed = false
             w.contentView = hosting
             w.center()
             window = w

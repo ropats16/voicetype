@@ -70,7 +70,8 @@ final class SettingsViewModel: ObservableObject {
             launchAtLogin = on
             loginError = nil
         } catch {
-            // Revert the toggle to the previous value.
+            // launchAtLogin was never changed (it's only set in the success branch); writing
+            // loginError publishes a change, so SwiftUI re-renders and the toggle snaps back.
             loginError = "Could not \(on ? "enable" : "disable") launch at login: \(error.localizedDescription)"
         }
     }
