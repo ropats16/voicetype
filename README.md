@@ -84,12 +84,11 @@ If it says the tools are already installed, you're good.
 ### 2. Get the code
 
 ```sh
-git clone <repository-url> voicetype
+git clone https://github.com/ropats16/voicetype.git voicetype
 cd voicetype
 ```
 
-(Replace `<repository-url>` with this project's Git URL. Every command after this
-is run from inside the `voicetype` folder.)
+(Every command after this is run from inside the `voicetype` folder.)
 
 ### 3. Build it and download the speech model
 
