@@ -166,6 +166,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard FileManager.default.fileExists(atPath: path) else {
             modelMissing = true
             Log.error("Model not found at \(path). Run `make setup`.")
+            Notifier.notify(
+                title: "VoiceType: model not found",
+                body: "Model file not found at \(path). Run `make setup` to download it."
+            )
             rebuildMenu()
             return
         }
@@ -185,6 +189,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async {
                     self?.modelMissing = true
                     Log.error("Model load failed: \(error.localizedDescription)")
+                    Notifier.notify(
+                        title: "VoiceType: model failed to load",
+                        body: "\(error.localizedDescription) Try `make setup` or `make model MODEL=<name>` to re-download it."
+                    )
                     self?.rebuildMenu()
                 }
             }

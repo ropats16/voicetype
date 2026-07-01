@@ -138,7 +138,7 @@ final class DictationController {
     }
 
     private func notify(_ title: String, _ body: String) {
-        // Lightweight surfacing for Phase 1; Phase 3 adds richer error UX.
         Log.error("\(title): \(body)")
+        Notifier.notify(title: title, body: body)
     }
 }
