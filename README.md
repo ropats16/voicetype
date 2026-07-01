@@ -309,12 +309,15 @@ to exercise the Intel path on an Apple Silicon Mac you must run the whole
 toolchain under Rosetta:
 
 ```sh
-arch -x86_64 swift build -c release
+arch -x86_64 swift build -c release --manifest-cache none
 ```
 
 Don't use `swift build --arch x86_64` — that still runs the manifest as `arm64`
-and selects the Metal branch. Smoke-test the resulting x86 binary with the
-[`--selftest` check](#troubleshooting) (a plain `x86_64` binary runs under
-Rosetta automatically).
+and selects the Metal branch. `--manifest-cache none` matters too: SwiftPM caches
+the compiled manifest by content, not by arch, so a prior `arm64` build can
+otherwise shadow the x86 branch and link-fail on duplicate symbols (real Intel
+Macs are unaffected — they only ever compile the manifest as x86). Smoke-test the
+resulting x86 binary with the [`--selftest` check](#troubleshooting) (a plain
+`x86_64` binary runs under Rosetta automatically).
 
 See `plans/IMPLEMENTATION-NOTES.md` for the durable build/integration details.
