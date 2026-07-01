@@ -17,6 +17,7 @@ final class DictationController {
     private let caretLocator = CaretLocator()
     private let transcriber: Transcriber
     private let configStore: ConfigStore
+    private let soundCues: SoundCues
 
     /// Ignore taps shorter than this — almost always accidental.
     private let minDuration: Double = 0.3
@@ -28,6 +29,9 @@ final class DictationController {
     init(transcriber: Transcriber, configStore: ConfigStore) {
         self.transcriber = transcriber
         self.configStore = configStore
+        self.soundCues = SoundCues(isEnabled: { [weak configStore] in
+            configStore?.config.soundCues ?? false
+        })
         recorder.onLevel = { [weak self] level in
             DispatchQueue.main.async { self?.indicator.updateLevel(level) }
         }
@@ -62,6 +66,7 @@ final class DictationController {
         do {
             try recorder.start()
             indicator.showRecording()
+            soundCues.play(.start)
             startMaxDurationTimer()
         } catch {
             Log.error("Recording failed to start: \(error.localizedDescription)")
@@ -74,6 +79,7 @@ final class DictationController {
         cancelMaxDurationTimer()
         guard recorder.isRecording else { return }
         let samples = recorder.stop()
+        soundCues.play(.stop)
         let duration = Double(samples.count) / AudioRecorder.targetSampleRate
 
         guard duration >= minDuration else {
