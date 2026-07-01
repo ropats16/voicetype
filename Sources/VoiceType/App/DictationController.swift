@@ -14,6 +14,7 @@ final class DictationController {
     private let recorder = AudioRecorder()
     private let indicator = IndicatorController()
     private let inserter = TextInserter()
+    private let caretLocator = CaretLocator()
     private let transcriber: Transcriber
     private let configStore: ConfigStore
 
@@ -104,7 +105,13 @@ final class DictationController {
                 Log.info("Transcription was empty.")
                 return
             }
-            inserter.insert(text)
+            if caretLocator.hasFocusedEditableElement() {
+                inserter.insert(text)
+            } else {
+                Log.info("No focused editable field; copying instead of pasting.")
+                inserter.copyOnly(text)
+                Notifier.notify(title: "Dictation copied", body: "No text field is focused — paste with ⌘V.")
+            }
         case .failure(let error):
             Log.error("Transcription failed: \(error.localizedDescription)")
             notify("Transcription failed", error.localizedDescription)

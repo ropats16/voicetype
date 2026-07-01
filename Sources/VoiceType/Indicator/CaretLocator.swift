@@ -90,6 +90,43 @@ struct CaretLocator {
         return (focused as! AXUIElement)
     }
 
+    // MARK: - Editable-field detection
+
+    /// Standard AX roles for editable text controls.
+    static let editableRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
+
+    /// Pure role check, factored out of `hasFocusedEditableElement()` so it's
+    /// unit-testable without an Accessibility round-trip.
+    static func isEditableRole(_ role: String?) -> Bool {
+        guard let role else { return false }
+        return editableRoles.contains(role)
+    }
+
+    /// Best-effort check for whether the system's currently focused UI element
+    /// is an editable text field — used to decide whether a paste is safe, or
+    /// whether to fall back to copy-only. No focused element, or any AX call
+    /// failing, just means `false`; same "best effort, never crashes" style as
+    /// `locate()`.
+    func hasFocusedEditableElement() -> Bool {
+        guard let focused = focusedElement() else { return false }
+        if Self.isEditableRole(role(of: focused)) { return true }
+        return isValueSettable(focused)
+    }
+
+    private func role(of element: AXUIElement) -> String? {
+        var roleRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef) == .success
+        else { return nil }
+        return roleRef as? String
+    }
+
+    private func isValueSettable(_ element: AXUIElement) -> Bool {
+        var settable: DarwinBoolean = false
+        guard AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) == .success
+        else { return false }
+        return settable.boolValue
+    }
+
     // MARK: - 4. Screen center fallback
 
     private func bottomCenterRect() -> CGRect {
