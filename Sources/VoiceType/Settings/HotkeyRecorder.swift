@@ -92,9 +92,15 @@ final class HotkeyRecorder: ObservableObject {
             let names = HotkeyCapture.modifierNames(from: event.modifierFlags)
             let kc = Int(event.keyCode)
             if !names.isEmpty {
-                // A modifier was pressed — track peak set and last key code.
-                lastModifierKeyCode = kc
-                peakModifierSet.formUnion(Set(names))
+                // On a release-of-one-while-others-remain the held set doesn't
+                // grow, so lastModifierKeyCode must NOT be overwritten with the
+                // released key. Only update lastModifierKeyCode when a modifier
+                // key went DOWN (the held set grew).
+                let newSet = Set(names)
+                if newSet.count > peakModifierSet.count {
+                    lastModifierKeyCode = kc     // a modifier key went DOWN (the held set grew)
+                }
+                peakModifierSet.formUnion(newSet)
             } else if !peakModifierSet.isEmpty {
                 // All modifiers released after a non-empty peak → attempt commit.
                 let peakNames = canonicalize(peakModifierSet)
