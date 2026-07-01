@@ -262,6 +262,31 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertGreaterThan(menuRefreshCount, 0)
     }
 
+    // MARK: - cancelCapture (C1 teardown path)
+
+    func testCancelCaptureIsNoOpWhenIdle() {
+        // When no capture is active, cancelCapture must not crash and must NOT
+        // call reloadHotkeys (recorder.captureTarget is nil → finishCapture returns early).
+        let vm = makeVMWithSpies()
+        vm.cancelCapture()
+        XCTAssertFalse(vm.isCapturing)
+        XCTAssertEqual(reloadCount, 0, "cancelCapture must be a no-op when not capturing")
+    }
+
+    func testCancelCaptureTeardownCapturingState() {
+        // After startCapture sets recorder.captureTarget, cancelCapture must
+        // clear it, set isCapturing=false, and call reloadHotkeys (resume tap).
+        let vm = makeVMWithSpies()
+        vm.recorder.startCapture(for: .hold, vm: vm)
+        XCTAssertTrue(vm.isCapturing, "isCapturing must be true after startCapture")
+        XCTAssertNotNil(vm.recorder.captureTarget, "captureTarget must be set after startCapture")
+        let reloadBefore = reloadCount
+        vm.cancelCapture()
+        XCTAssertFalse(vm.isCapturing, "isCapturing must be false after cancelCapture")
+        XCTAssertNil(vm.recorder.captureTarget, "captureTarget must be nil after cancelCapture")
+        XCTAssertGreaterThan(reloadCount, reloadBefore, "cancelCapture must call reloadHotkeys to resume tap")
+    }
+
     // MARK: - holdDescription / toggleDescription
 
     func testHoldDescriptionMatchesDefaultControlShift() {

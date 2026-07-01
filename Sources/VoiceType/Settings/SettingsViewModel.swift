@@ -44,6 +44,13 @@ final class SettingsViewModel: ObservableObject {
     /// True while a live key-capture session is in progress (global tap is suspended).
     @Published private(set) var isCapturing: Bool = false
 
+    // MARK: - Hotkey recorder (owned here so SettingsWindowController can tear it down)
+
+    /// Single, stable `HotkeyRecorder` instance. Owned by the VM (which outlives
+    /// individual window-close/reopen cycles) so `SettingsWindowController` can
+    /// reach it via `cancelCapture()` from `windowWillClose(_:)`.
+    let recorder = HotkeyRecorder()
+
     // MARK: - Init
 
     init(configStore: ConfigStore,
@@ -158,9 +165,21 @@ final class SettingsViewModel: ObservableObject {
         }
     }
 
+    /// Cancels any in-progress capture: removes the NSEvent monitor, clears
+    /// `captureTarget`, and resumes the global tap. No-op when idle.
+    /// Called by `SettingsWindowController.windowWillClose(_:)` as the reliable
+    /// teardown path for the mid-capture window-close scenario (C1).
+    func cancelCapture() {
+        recorder.cancelCapture(vm: self)
+    }
+
     /// Resets a binding to its documented default (hold → ⌃⇧, toggle → ⌃⌥Space).
     /// This is the "combo didn't work" fallback; applies live and refreshes the menu.
     func resetHotkey(_ target: HotkeyTarget) {
+        // Cancel any active capture first so the recorder monitor is removed before
+        // we reload the tap. No-op if idle; handles the case where the OTHER row's
+        // capture is in progress (I2).
+        recorder.cancelCapture(vm: self)
         switch target {
         case .hold:
             let binding = KeyBinding.controlShift

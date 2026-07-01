@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindowController: SettingsWindowController?
 
     private var readinessTimer: Timer?
+    private var hasLoggedReady = false
 
     private enum State {
         case loadingModel
@@ -243,9 +244,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         manager.onCancel = { [weak self] in self?.dictation?.cancelRecording() }
         if manager.start() {
             hotkeys = manager
-            Log.info("VoiceType is ready. Hold \(HotkeyDescription.describe(configStore.config.hold)) or press \(HotkeyDescription.describe(configStore.config.toggle)) to dictate.")
+            // Log only on the first successful wire-up, not on every hotkey rebind.
+            if !hasLoggedReady {
+                hasLoggedReady = true
+                Log.info("VoiceType is ready. Hold \(HotkeyDescription.describe(configStore.config.hold)) or press \(HotkeyDescription.describe(configStore.config.toggle)) to dictate.")
+            }
+        } else {
+            // start() failed (e.g. Accessibility revoked mid-session). Re-arm the
+            // readiness poll so the tap self-recovers once the user re-grants access,
+            // without requiring an app restart (I3).
+            if readinessTimer == nil {
+                readinessTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                    self?.evaluateReadiness()
+                }
+            }
         }
-        // else: hotkeys remains nil; caller retries on next timer tick if applicable
     }
 
     /// Suspends the active hotkey tap without tearing down `dictation`. Used by

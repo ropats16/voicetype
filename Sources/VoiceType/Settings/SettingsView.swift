@@ -6,10 +6,10 @@ import AppKit
 /// and initial load never re-persists config values.
 struct SettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
-    /// Manages the NSEvent local monitor for live hotkey capture. Its lifetime
-    /// is tied to this view (window); when the window closes, `onDisappear`
-    /// cancels any in-progress capture, removing the monitor.
-    @StateObject private var recorder = HotkeyRecorder()
+    /// The recorder is now owned by `SettingsViewModel` so `SettingsWindowController`
+    /// can reach it via `viewModel.cancelCapture()` from `windowWillClose(_:)`.
+    /// Passed explicitly so SwiftUI observes its `@Published` properties.
+    @ObservedObject var recorder: HotkeyRecorder
 
     var body: some View {
         Form {
@@ -143,7 +143,14 @@ private struct HotkeyRow: View {
                     .foregroundColor(.secondary)
                 Button("Record") { onRecord() }
             }
-            Button("Reset to default") { onReset() }
+            // Hide Reset while this row is in "Recording…" mode so there is no
+            // path that leaves the recorder's monitor active while the VM thinks
+            // capture has ended (I2). The edge case of the OTHER row capturing is
+            // handled inside SettingsViewModel.resetHotkey, which calls
+            // recorder.cancelCapture first.
+            if !isCapturing {
+                Button("Reset to default") { onReset() }
+            }
         }
     }
 }
