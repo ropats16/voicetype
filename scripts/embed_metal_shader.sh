@@ -12,6 +12,16 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
+
+# On Intel (x86_64) the CPU build path is used (see Package.swift) and no Metal
+# shader is needed, so skip the embed entirely — this makes make/setup/package
+# work on Intel with no arch branching in the callers. Under Rosetta `uname -m`
+# reports x86_64, which is exactly the CPU-build case we want to skip.
+if [[ "$(uname -m)" == "x86_64" ]]; then
+  echo "✓ skipping Metal shader embed on x86_64 (CPU-only build)"
+  exit 0
+fi
+
 G="$ROOT/Sources/CWhisper/whisper.cpp/ggml/src"
 M="$G/ggml-metal"
 COMMON="$G/ggml-common.h"

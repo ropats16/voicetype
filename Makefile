@@ -14,11 +14,18 @@ MODEL ?= medium.en
 
 .PHONY: setup embed model build run package install clean
 
+# `make setup` auto-detects the model from this Mac's arch + RAM. Pass MODEL= to
+# override, e.g. `make setup MODEL=small.en` — only a command-line MODEL is
+# forwarded, so the plain `make setup` reaches setup.sh with no arg (auto-pick).
 setup:
+ifeq ($(origin MODEL),command line)
 	bash scripts/setup.sh $(MODEL)
+else
+	bash scripts/setup.sh
+endif
 
 # Generate the embedded Metal-shader artifacts (idempotent). Required before any
-# swift build, so build/run depend on it.
+# swift build, so build/run depend on it. No-op on Intel (CPU-only build).
 embed:
 	bash scripts/embed_metal_shader.sh
 
