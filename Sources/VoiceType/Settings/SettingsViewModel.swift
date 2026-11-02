@@ -1,6 +1,12 @@
 import Foundation
 import Combine
 
+/// One row of the "Max dictation length" picker.
+struct MaxDictationChoice: Hashable {
+    let seconds: Double
+    let label: String
+}
+
 /// Which hotkey binding is being edited or captured.
 enum HotkeyTarget { case hold, toggle }
 
@@ -29,6 +35,8 @@ final class SettingsViewModel: ObservableObject {
     @Published private(set) var soundCues: Bool
     @Published private(set) var launchAtLogin: Bool
     @Published private(set) var selectedMicUID: String?     // nil = System Default
+    /// The picker selection: the configured max dictation length (0 = no limit).
+    @Published private(set) var maxDictationSeconds: Double
     @Published private(set) var selectedModelSize: String?  // nil if current path unknown
     @Published private(set) var loginError: String?
     @Published private(set) var modelChangeNeedsRestart: Bool = false
@@ -72,6 +80,7 @@ final class SettingsViewModel: ObservableObject {
         self.soundCues = cfg.soundCues
         self.launchAtLogin = loginItem.isEnabled
         self.selectedMicUID = cfg.microphoneUID
+        self.maxDictationSeconds = max(0, cfg.maxRecordingSeconds)
         self.selectedModelSize = ModelCatalog.selectedSize(modelPath: cfg.modelPath)
         self.holdBinding = cfg.hold
         self.toggleBinding = cfg.toggle
@@ -99,6 +108,12 @@ final class SettingsViewModel: ObservableObject {
         }
     }
 
+    /// Persists the max dictation length (0 = no limit). Read at each start.
+    func setMaxDictationSeconds(_ seconds: Double) {
+        configStore.update { $0.maxRecordingSeconds = seconds }
+        maxDictationSeconds = seconds
+    }
+
     /// Persists the selected microphone UID (nil = system default) and triggers a
     /// menu rebuild so the status item reflects the new choice.
     func selectMic(_ uid: String?) {
@@ -120,6 +135,20 @@ final class SettingsViewModel: ObservableObject {
     }
 
     // MARK: - Computed properties for the View
+
+    /// The fixed lengths, plus the configured one as a "custom" row when it was
+    /// hand-edited to something else, so the picker always shows the truth.
+    var maxDictationChoices: [MaxDictationChoice] {
+        var seconds = DictationLimit.choices
+        let current = maxDictationSeconds
+        if !seconds.contains(current) {
+            seconds.insert(current, at: seconds.firstIndex { $0 <= 0 || $0 > current } ?? seconds.endIndex)
+        }
+        return seconds.map { s in
+            let label = DictationLimit.label(s)
+            return MaxDictationChoice(seconds: s, label: DictationLimit.choices.contains(s) ? label : "\(label) (custom)")
+        }
+    }
 
     /// All currently available audio input devices (re-queried each access).
     var micOptions: [AudioInputDevice] { availableMics() }

@@ -107,17 +107,17 @@ final class ConfigValidationTests: XCTestCase {
         XCTAssertTrue(warnings(config).isEmpty)
     }
 
-    // MARK: - Warning — non-positive max duration
+    // MARK: - Non-positive max duration ("No limit" in Settings)
 
-    func testZeroMaxRecordingSecondsIsWarning() {
+    func testZeroMaxRecordingSecondsIsValid() {
         var config = Config.defaults
         config.maxRecordingSeconds = 0
-        XCTAssertEqual(warnings(config).count, 1)
+        XCTAssertTrue(ConfigValidator.validate(config).isEmpty, "No limit is a normal Settings choice")
     }
 
-    func testNegativeMaxRecordingSecondsIsWarning() {
+    func testNegativeMaxRecordingSecondsIsValid() {
         var config = Config.defaults
         config.maxRecordingSeconds = -5
-        XCTAssertEqual(warnings(config).count, 1)
+        XCTAssertTrue(ConfigValidator.validate(config).isEmpty, "Treated as no limit")
     }
 }

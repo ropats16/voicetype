@@ -212,9 +212,11 @@ let package = Package(
             cxxSettings: cxxSettings,
             linkerSettings: cwhisperFrameworks
         ),
+        // Lock-free SPSC sample ring for the real-time audio callback (C11 atomics).
+        .target(name: "CAudioRing", path: "Sources/CAudioRing"),
         .executableTarget(
             name: "VoiceType",
-            dependencies: ["CWhisper"],
+            dependencies: ["CWhisper", "CAudioRing"],
             path: "Sources/VoiceType",
             swiftSettings: whisperImporterSettings,
             linkerSettings: [

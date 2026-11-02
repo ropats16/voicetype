@@ -145,8 +145,9 @@ capitalization. Try it in Notes, Chrome, Slack, or the Terminal.
 - Or **toggle**: press **⌃⌥Space** once to start, press again to stop — handy for
   longer passages where you don't want to hold a key down.
 - **Press Esc while recording to cancel** — nothing is transcribed or inserted.
-- Recording **auto-stops** after `maxRecordingSeconds` (default 120) so a
-  forgotten recording can't run forever.
+- Recording **auto-stops** after the max dictation length (Settings; default
+  10 min, or "No limit", which still stops at 30 min) so a forgotten recording
+  can't run forever. A notification tells you when that happens.
 - The indicator near your cursor shows **listening → transcribing → done**.
 - Your existing clipboard is restored after each dictation, so dictating never
   overwrites something you copied.
@@ -215,10 +216,11 @@ logs the problem at startup and the menu shows a **Config issue** warning.
 | `hold`                | The hold-to-talk hotkey (see above).                |
 | `toggle`              | The press-to-start / press-to-stop hotkey.          |
 | `cancelKeyCode`       | Key that cancels a recording (default 53 = Esc).    |
-| `maxRecordingSeconds` | Auto-stop after this many seconds (default 120).    |
+| `maxRecordingSeconds` | Auto-stop after this many seconds (default 600; `0` = no limit, capped at 30 min). |
 | `trailingSpace`       | Add a space after each dictation (default off).     |
 | `language`            | `en`.                                               |
 | `threads`             | CPU threads; `0` = pick automatically.              |
+| `keepMicWarm`         | Keep the mic on from launch (default off: it stays on 30 s after each dictation). |
 
 ---
 

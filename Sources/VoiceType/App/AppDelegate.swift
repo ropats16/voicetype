@@ -15,9 +15,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         language: configStore.config.language,
         threads: configStore.config.threads
     )
+    /// Mic capture. The mic and max duration are read live, so a Settings change
+    /// applies to the next recording.
+    private lazy var capture = AudioCapture(
+        source: MicSource(configuredUID: { [configStore] in configStore.config.microphoneUID }),
+        keepWarm: configStore.config.keepMicWarm,
+        maxSeconds: { [configStore] in configStore.config.maxRecordingSeconds }
+    )
     private var settingsWindowController: SettingsWindowController?
 
     private var readinessTimer: Timer?
+    private var isMicWarm = false
     private var hasLoggedReady = false
 
     private var configIssueCount = 0
@@ -167,10 +175,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func requestPermissionsIfNeeded() {
         permissions.requestMicrophone { [weak self] _ in
-            self?.rebuildMenu()
+            self?.evaluateReadiness()
         }
         if !permissions.isAccessibilityTrusted(prompt: true) {
             Log.info("Accessibility not yet granted; prompting user.")
+        }
+    }
+
+    /// With `keepMicWarm` (no Settings UI) the mic runs from the moment mic
+    /// permission is granted, so every dictation gets pre-roll. Otherwise it
+    /// starts on first use. Attempts once; safe to call repeatedly.
+    private func keepMicWarmIfConfigured() {
+        guard configStore.config.keepMicWarm, !isMicWarm, permissions.micStatus == .authorized else { return }
+        isMicWarm = true
+        do { try capture.warmUp() } catch {
+            Log.error("Could not keep the microphone warm: \(error.localizedDescription)")
         }
     }
 
@@ -209,11 +228,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func evaluateReadiness() {
         rebuildMenu()
+        keepMicWarmIfConfigured()
         guard engine.status == .ready else { return }
         guard permissions.isAccessibilityTrusted() else { return }
 
         if dictation == nil {
-            dictation = DictationController(engine: engine, configStore: configStore)
+            dictation = DictationController(engine: engine, capture: capture, configStore: configStore)
         }
         if hotkeys == nil {
             reloadHotkeys()
@@ -221,6 +241,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return   // tap failed (Accessibility); try again on next tick
             }
         }
+
+        // With keepMicWarm, keep polling until mic permission is granted.
+        if configStore.config.keepMicWarm && !isMicWarm { return }
 
         // Fully wired — stop polling.
         readinessTimer?.invalidate()

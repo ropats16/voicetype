@@ -107,6 +107,48 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertFalse(vm.soundCues)
     }
 
+    // MARK: - Max dictation length
+
+    func testMaxDictationDefaultsToTenMinutes() {
+        XCTAssertEqual(makeVM().maxDictationSeconds, 600)
+    }
+
+    func testMaxDictationOffersTheFixedChoices() {
+        XCTAssertEqual(makeVM().maxDictationChoices.map(\.label),
+                       ["2 min", "5 min", "10 min", "30 min", "No limit"])
+    }
+
+    func testSetMaxDictationPersists() {
+        let vm = makeVM()
+        vm.setMaxDictationSeconds(300)
+        XCTAssertEqual(configStore.config.maxRecordingSeconds, 300)
+        XCTAssertEqual(vm.maxDictationSeconds, 300)
+    }
+
+    func testNoLimitPersistsAsZero() {
+        let vm = makeVM()
+        vm.setMaxDictationSeconds(0)
+        XCTAssertEqual(configStore.config.maxRecordingSeconds, 0)
+        XCTAssertEqual(vm.maxDictationChoices.first { $0.seconds == vm.maxDictationSeconds }?.label, "No limit")
+    }
+
+    func testHandEditedLengthShowsAsCustomChoiceWithoutRewritingConfig() {
+        configStore.update { $0.maxRecordingSeconds = 90 }
+        let vm = makeVM()
+        XCTAssertEqual(vm.maxDictationSeconds, 90)
+        XCTAssertEqual(vm.maxDictationChoices.map(\.label),
+                       ["90 s (custom)", "2 min", "5 min", "10 min", "30 min", "No limit"])
+        XCTAssertEqual(configStore.config.maxRecordingSeconds, 90, "Showing it must not change it")
+    }
+
+    func testNegativeLengthShowsAsNoLimitWithoutRewritingConfig() {
+        configStore.update { $0.maxRecordingSeconds = -5 }
+        let vm = makeVM()
+        XCTAssertEqual(vm.maxDictationSeconds, 0)
+        XCTAssertEqual(vm.maxDictationChoices.count, 5, "No custom row: <= 0 already means no limit")
+        XCTAssertEqual(configStore.config.maxRecordingSeconds, -5)
+    }
+
     // MARK: - selectMic
 
     func testSelectMicSetsUID() {

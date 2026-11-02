@@ -1,4 +1,5 @@
 import XCTest
+import AVFoundation
 @testable import VoiceType
 
 /// Contract test for the whisper.cpp adapter, run through the engine against
@@ -14,19 +15,18 @@ final class WhisperEngineContractTests: XCTestCase {
     func testTranscribesJFKSampleIntoOrderedTimestampedSegments() async throws {
         try XCTSkipUnless(FileManager.default.fileExists(atPath: modelPath), "tiny.en model not downloaded")
         try XCTSkipUnless(FileManager.default.fileExists(atPath: wavPath), "jfk.wav fixture not present")
-        let audio = try WavReader.load(path: wavPath)
-        XCTAssertEqual(audio.sampleRate, 16_000)
+        let samples = try loadMono16k(wavPath)
 
         let engine = TranscriptionEngine.whisper(modelPath: modelPath, language: "en", threads: 0)
         engine.load()
-        let transcript = try await engine.transcribe(audio.samples)
+        let transcript = try await engine.transcribe(samples)
 
         XCTAssertEqual(engine.status, .ready)
         XCTAssertTrue(transcript.text.lowercased().contains("country"),
                       "Expected the JFK quote, got: \(transcript.text)")
         XCTAssertFalse(transcript.segments.isEmpty)
 
-        let duration = Double(audio.samples.count) / 16_000
+        let duration = Double(samples.count) / 16_000
         var previousEnd: TimeInterval = 0
         for segment in transcript.segments {
             XCTAssertLessThanOrEqual(previousEnd, segment.start, "Segments must not go back in time")
@@ -35,5 +35,17 @@ final class WhisperEngineContractTests: XCTestCase {
         }
         XCTAssertGreaterThan(previousEnd, 1, "Timestamps must be real, not all zero")
         XCTAssertLessThanOrEqual(previousEnd, duration + 0.5, "Timestamps stay within the clip")
+    }
+
+    /// The fixture is already 16 kHz mono, so read it straight, without the
+    /// capture's resampler.
+    private func loadMono16k(_ path: String) throws -> [Float] {
+        let file = try AVAudioFile(forReading: URL(fileURLWithPath: path))
+        XCTAssertEqual(file.processingFormat.sampleRate, 16_000)
+        XCTAssertEqual(file.processingFormat.channelCount, 1)
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: file.processingFormat,
+                                                    frameCapacity: AVAudioFrameCount(file.length)))
+        try file.read(into: buffer)
+        return Array(UnsafeBufferPointer(start: buffer.floatChannelData![0], count: Int(buffer.frameLength)))
     }
 }

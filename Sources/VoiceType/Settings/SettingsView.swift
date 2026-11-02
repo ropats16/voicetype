@@ -40,6 +40,21 @@ struct SettingsView: View {
                 Text("Startup")
             }
 
+            // MARK: Dictation
+            Section {
+                Picker("Max dictation length",
+                       selection: Binding(
+                           get: { viewModel.maxDictationSeconds },
+                           set: { viewModel.setMaxDictationSeconds($0) }
+                       )) {
+                    ForEach(viewModel.maxDictationChoices, id: \.seconds) { choice in
+                        Text(choice.label).tag(choice.seconds)
+                    }
+                }
+            } header: {
+                Text("Dictation")
+            }
+
             // MARK: Microphone
             Section {
                 Picker("Microphone",

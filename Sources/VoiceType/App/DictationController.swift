@@ -4,15 +4,16 @@ import AppKit
 /// Drives the end-to-end dictation loop:
 ///
 ///   hold key down → record + show indicator
-///   hold key up   → stop, show spinner, transcribe off-thread,
-///                   insert at caret, restore clipboard, dismiss
+///   hold key up   → show spinner, finish capture (post-roll), transcribe
+///                   off-thread, insert at caret, restore clipboard, dismiss
 ///
-/// Owns the recorder, indicator and inserter, and submits audio to the shared
-/// transcription engine (which serializes jobs itself); the app delegate
-/// wires it to the hotkey manager. All methods must be called on the main
-/// thread (the hotkey callbacks and timers already hop there).
+/// Owns the indicator and inserter, records through the shared audio capture,
+/// and submits audio to the shared transcription engine (which serializes jobs
+/// itself); the app delegate wires it to the hotkey manager. All methods must
+/// be called on the main thread (the hotkey callbacks and timers already hop
+/// there).
 final class DictationController {
-    private let recorder = AudioRecorder()
+    private let capture: AudioCapture
     private let indicator = IndicatorController()
     private let inserter = TextInserter()
     private let caretLocator = CaretLocator()
@@ -25,16 +26,18 @@ final class DictationController {
 
     private var maxDurationTimer: Timer?
     private var isBusy = false
+    /// When the current recording began, to spot accidental taps (the captured
+    /// audio is longer than the press: it includes pre- and post-roll).
+    private var recordingStartedAt: TimeInterval = 0
 
-    init(engine: TranscriptionEngine, configStore: ConfigStore) {
+    init(engine: TranscriptionEngine, capture: AudioCapture, configStore: ConfigStore) {
         self.engine = engine
+        self.capture = capture
         self.configStore = configStore
         self.soundCues = SoundCues(isEnabled: { [weak configStore] in
             configStore?.config.soundCues ?? false
         })
-        recorder.onLevel = { [weak self] level in
-            DispatchQueue.main.async { self?.indicator.updateLevel(level) }
-        }
+        capture.onLevel = { [weak self] level in self?.indicator.updateLevel(level) }
     }
 
     private var config: Config { configStore.config }
@@ -45,18 +48,18 @@ final class DictationController {
     /// Reuses the hold-mode start/stop paths verbatim, so the indicator,
     /// min/max-duration guards, and transcription flow are identical.
     func toggleRecording() {
-        if recorder.isRecording { stopRecordingAndTranscribe() }
+        if capture.isRecording { stopRecordingAndTranscribe() }
         else { startRecording() }   // startRecording already guards !isBusy
     }
 
     /// Esc-to-cancel: abort an in-progress recording, discarding the audio.
     /// Nothing is transcribed, inserted, or copied to the clipboard. If a
-    /// transcription is already in flight (`isRecording == false`, `isBusy`),
+    /// transcription is already in flight (not recording, `isBusy`),
     /// this is a no-op — cancelling mid-transcription is out of scope.
     func cancelRecording() {
         cancelMaxDurationTimer()
-        guard recorder.isRecording else { return }   // nothing to cancel
-        recorder.cancel()        // stops + discards samples
+        guard capture.isRecording else { return }   // nothing to cancel
+        capture.cancel()         // discards samples
         indicator.dismiss()
         Log.info("Recording cancelled.")
     }
@@ -64,9 +67,8 @@ final class DictationController {
     func startRecording() {
         guard !isBusy else { return }
         do {
-            // Live-read config so a mic change in Settings takes effect next recording.
-            recorder.preferredDeviceUID = config.microphoneUID
-            try recorder.start()
+            try capture.begin()
+            recordingStartedAt = ProcessInfo.processInfo.systemUptime
             indicator.showRecording()
             soundCues.play(.start)
             startMaxDurationTimer()
@@ -79,13 +81,13 @@ final class DictationController {
 
     func stopRecordingAndTranscribe() {
         cancelMaxDurationTimer()
-        guard recorder.isRecording else { return }
-        let samples = recorder.stop()
-        soundCues.play(.stop)
-        let duration = Double(samples.count) / AudioRecorder.targetSampleRate
+        guard capture.isRecording else { return }
+        let duration = ProcessInfo.processInfo.systemUptime - recordingStartedAt
 
         guard duration >= minDuration else {
             Log.debug("Ignoring \(String(format: "%.2f", duration))s tap.")
+            capture.cancel()
+            soundCues.play(.stop)
             indicator.dismiss()
             return
         }
@@ -94,6 +96,15 @@ final class DictationController {
         isBusy = true
         let trailingSpace = config.trailingSpace
 
+        // The capture finishes after its post-roll, on main. The stop cue waits
+        // for it so the cue isn't recorded into the post-roll.
+        capture.end { [weak self] samples in
+            self?.soundCues.play(.stop)
+            self?.transcribe(samples, trailingSpace: trailingSpace)
+        }
+    }
+
+    private func transcribe(_ samples: [Float], trailingSpace: Bool) {
         // Runs on main; only the `await` leaves it, on the engine's queue.
         Task { @MainActor [weak self, engine] in
             let result: Result<String, Error>
@@ -133,12 +144,17 @@ final class DictationController {
 
     // MARK: - Max duration auto-stop
 
+    /// Stops at the configured limit, or at the capture's ceiling when there's
+    /// none, transcribing as usual and telling the user why it stopped.
     private func startMaxDurationTimer() {
-        let max = config.maxRecordingSeconds
-        guard max > 0 else { return }
-        maxDurationTimer = Timer.scheduledTimer(withTimeInterval: max, repeats: false) { [weak self] _ in
+        let configured = config.maxRecordingSeconds
+        let limit = configured > 0 ? configured : AudioCapture.ceilingSeconds
+        maxDurationTimer = Timer.scheduledTimer(withTimeInterval: limit, repeats: false) { [weak self] _ in
             Log.info("Max duration reached; stopping.")
             self?.stopRecordingAndTranscribe()
+            let length = DictationLimit.label(limit).replacingOccurrences(of: " ", with: "-")
+            Notifier.notify(title: "Dictation stopped",
+                            body: "Dictation stopped at the \(length) limit — change it in Settings.")
         }
     }
 

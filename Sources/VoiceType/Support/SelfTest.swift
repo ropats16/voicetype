@@ -1,9 +1,11 @@
 import Foundation
 
-/// `VoiceType --selftest --model <ggml.bin> --wav <16kHz.wav>`
+/// `VoiceType --selftest --model <ggml.bin> --wav <file.wav>`
 ///
-/// Loads the model and transcribes a WAV file, printing the result. A quick way
-/// to confirm the Whisper/Metal engine works without granting permissions or
+/// Loads the model and transcribes a WAV file (any sample rate or channel
+/// count), printing the result. The file is played through the audio capture's
+/// WAV adapter, so it's resampled exactly like the mic. A quick way to confirm
+/// the capture + Whisper/Metal path works without granting permissions or
 /// speaking into a mic.
 enum SelfTest {
     static func run(arguments: [String]) -> Int32 {
@@ -12,17 +14,14 @@ enum SelfTest {
             return arguments[i + 1]
         }
         guard let model = value("--model"), let wav = value("--wav") else {
-            FileHandle.standardError.write(Data("usage: VoiceType --selftest --model <ggml.bin> --wav <16kHz.wav>\n".utf8))
+            FileHandle.standardError.write(Data("usage: VoiceType --selftest --model <ggml.bin> --wav <file.wav>\n".utf8))
             return 2
         }
 
         do {
-            let audio = try WavReader.load(path: wav)
-            let seconds = Double(audio.samples.count) / Double(audio.sampleRate)
-            err("Loaded \(audio.samples.count) samples (\(String(format: "%.1f", seconds))s @ \(audio.sampleRate) Hz)")
-            if audio.sampleRate != 16000 {
-                err("warning: expected 16 kHz audio; got \(audio.sampleRate) Hz — transcription may be off")
-            }
+            let samples = try capture(wav: URL(fileURLWithPath: wav))
+            let seconds = Double(samples.count) / AudioCapture.sampleRate
+            err("Loaded \(samples.count) samples (\(String(format: "%.1f", seconds))s @ 16 kHz)")
 
             err("Loading model: \(model)")
             let engine = TranscriptionEngine.whisper(modelPath: model, language: "en", threads: 0)
@@ -43,7 +42,7 @@ enum SelfTest {
             }
 
             let start = Date()
-            let text = try blocking { try await engine.transcribe(audio.samples).text }
+            let text = try blocking { try await engine.transcribe(samples).text }
             let elapsed = Date().timeIntervalSince(start)
 
             err("Transcribed in \(String(format: "%.2f", elapsed))s")
@@ -53,6 +52,19 @@ enum SelfTest {
             err("selftest failed: \(error.localizedDescription)")
             return 1
         }
+    }
+
+    /// Records the whole file through the capture. Its result arrives on main,
+    /// so spin the main run loop until it does.
+    private static func capture(wav url: URL) throws -> [Float] {
+        let source = try WavFileSource(url: url)
+        let capture = AudioCapture(source: source)
+        try capture.begin()
+        source.push()
+        var samples: [Float]?
+        capture.end { samples = $0 }
+        while samples == nil { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01)) }
+        return samples!
     }
 
     /// Runs async work to completion from this synchronous CLI path. The

@@ -68,13 +68,6 @@ enum ConfigValidator {
                 message: "`toggle` has unknown modifier \"\(name)\"; it will be ignored."))
         }
 
-        // warning — non-positive max duration disables auto-stop (0 = no cap).
-        if config.maxRecordingSeconds <= 0 {
-            issues.append(ConfigIssue(
-                severity: .warning,
-                message: "`maxRecordingSeconds` is \(config.maxRecordingSeconds); recording auto-stop is disabled."))
-        }
-
         return issues
     }
 
