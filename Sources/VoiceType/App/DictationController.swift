@@ -65,10 +65,12 @@ final class DictationController {
     }
 
     func startRecording() {
-        guard !isBusy else { return }
+        // The hold hotkey can fire repeatedly while held; only the first starts.
+        guard !isBusy, !capture.isRecording else { return }
         do {
             try capture.begin()
             recordingStartedAt = ProcessInfo.processInfo.systemUptime
+            Log.info("Recording started.")
             indicator.showRecording()
             soundCues.play(.start)
             startMaxDurationTimer()
@@ -92,6 +94,7 @@ final class DictationController {
             return
         }
 
+        Log.info("Recording stopped after \(String(format: "%.1f", duration))s; transcribing.")
         indicator.showProcessing()
         isBusy = true
         let trailingSpace = config.trailingSpace
