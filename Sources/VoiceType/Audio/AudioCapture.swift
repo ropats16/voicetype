@@ -19,7 +19,7 @@ enum AudioCaptureError: LocalizedError {
 /// state, and every call into the source, lives on that queue.
 ///
 /// Main-thread API: call `begin`, `end` and `cancel` on main; callbacks arrive
-/// on main.
+/// on main. None of them waits for the source: a cold mic starts on the queue.
 final class AudioCapture {
     static let sampleRate: Double = 16_000
     /// Audio kept from before `begin` while the source is warm, so speech that
@@ -41,8 +41,11 @@ final class AudioCapture {
     /// 0...1 RMS level of the recording, for the waveform UI.
     var onLevel: ((Float) -> Void)?
 
-    /// True from `begin()` until `end` or `cancel`.
+    /// True from `begin` until `end`, `cancel`, or a failed start.
     private(set) var isRecording = false
+    /// Counts `begin` calls, so a late start failure can't end a newer
+    /// recording. On main.
+    private var beginCount = 0
 
     private static let format = AVAudioFormat(
         commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false)!
@@ -105,14 +108,26 @@ final class AudioCapture {
 
     // MARK: - Main-thread API
 
-    /// Starts a recording. A warm source contributes its pre-roll; a cold one
-    /// is started, and the recording begins at its first sample.
-    func begin() throws {
+    /// Starts a recording and returns at once; ignored while recording. A warm
+    /// source contributes its pre-roll; a cold one is started on the queue,
+    /// and the recording begins at its first sample. `started` is called once
+    /// the source is running (`nil`) or failed to start (the error); after a
+    /// failure the recording is over, and an `end` gets no samples.
+    func begin(_ started: @escaping (Error?) -> Void) {
         guard !isRecording else { return }
         let press = maxSeconds() > 0 ? maxSeconds() : Self.ceilingSeconds
         let cap = Int((press + Self.preRollSeconds + Self.postRollSeconds) * Self.sampleRate)
-        try queue.sync { try beginRecording(cap: cap) }
         isRecording = true
+        beginCount += 1
+        let thisBegin = beginCount
+        queue.async { [self] in
+            var failure: Error?
+            do { try beginRecording(cap: cap) } catch { failure = error }
+            DispatchQueue.main.async { [self] in
+                if failure != nil && beginCount == thisBegin { isRecording = false }
+                started(failure)
+            }
+        }
     }
 
     /// Ends the recording once the post-roll is in (sooner if the source stops);
@@ -139,6 +154,7 @@ final class AudioCapture {
     }
 
     /// Starts the source without recording, so the next `begin` has pre-roll.
+    /// Unlike `begin`, waits for the source to start.
     func warmUp() throws {
         try queue.sync { if !isRunning { try startSource() } }
     }
@@ -293,7 +309,7 @@ final class AudioCapture {
     private func drainRingAndStopIfIdle() {
         drainRing()
         // E.g. AirPods switching to call quality as the mic opens: the device
-        // changes format under the engine, which can go silent without the
+        // changes format under the mic, which can go silent without the
         // change ever looking like one when it's reported.
         if isRunning, let timeout = source.stallTimeout,
            ProcessInfo.processInfo.systemUptime - lastAudioAt > timeout {

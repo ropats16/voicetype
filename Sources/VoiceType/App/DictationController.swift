@@ -67,18 +67,25 @@ final class DictationController {
     func startRecording() {
         // The hold hotkey can fire repeatedly while held; only the first starts.
         guard !isBusy, !capture.isRecording else { return }
-        do {
-            try capture.begin()
-            recordingStartedAt = ProcessInfo.processInfo.systemUptime
-            Log.info("Recording started.")
-            indicator.showRecording()
-            soundCues.play(.start)
-            startMaxDurationTimer()
-        } catch {
-            Log.error("Recording failed to start: \(error.localizedDescription)")
-            notify("Couldn't start recording", error.localizedDescription)
-            indicator.dismiss()
+        // Returns at once, so the indicator shows while a cold mic starts.
+        capture.begin { [weak self] error in
+            if let error { self?.recordingFailedToStart(error) }
         }
+        recordingStartedAt = ProcessInfo.processInfo.systemUptime
+        Log.info("Recording started.")
+        indicator.showRecording()
+        soundCues.play(.start)
+        startMaxDurationTimer()
+    }
+
+    /// The mic didn't start. If the key is still held, the recording is over;
+    /// if it was already released, its transcription gets no audio.
+    private func recordingFailedToStart(_ error: Error) {
+        // A newer recording is running: this failure is a stale one's.
+        guard !capture.isRecording else { return }
+        cancelMaxDurationTimer()
+        notify("Couldn't start recording", error.localizedDescription)
+        indicator.dismiss()
     }
 
     func stopRecordingAndTranscribe() {

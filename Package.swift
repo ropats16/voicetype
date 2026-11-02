@@ -212,8 +212,13 @@ let package = Package(
             cxxSettings: cxxSettings,
             linkerSettings: cwhisperFrameworks
         ),
-        // Lock-free SPSC sample ring for the real-time audio callback (C11 atomics).
-        .target(name: "CAudioRing", path: "Sources/CAudioRing"),
+        // Lock-free SPSC sample ring (C11 atomics) and the mic's real-time
+        // AUHAL input callback that fills it.
+        .target(
+            name: "CAudioRing",
+            path: "Sources/CAudioRing",
+            linkerSettings: [.linkedFramework("AudioToolbox")]
+        ),
         .executableTarget(
             name: "VoiceType",
             dependencies: ["CWhisper", "CAudioRing"],

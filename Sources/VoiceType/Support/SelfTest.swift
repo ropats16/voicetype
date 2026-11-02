@@ -54,12 +54,15 @@ enum SelfTest {
         }
     }
 
-    /// Records the whole file through the capture. Its result arrives on main,
-    /// so spin the main run loop until it does.
+    /// Records the whole file through the capture. Its callbacks arrive on
+    /// main, so spin the main run loop until they do.
     private static func capture(wav url: URL) throws -> [Float] {
         let source = try WavFileSource(url: url)
         let capture = AudioCapture(source: source)
-        try capture.begin()
+        var started: Error??
+        capture.begin { started = $0 }
+        while started == nil { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01)) }
+        if let error = started! { throw error }
         source.push()
         var samples: [Float]?
         capture.end { samples = $0 }

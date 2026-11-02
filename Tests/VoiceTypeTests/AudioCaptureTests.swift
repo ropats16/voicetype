@@ -1,5 +1,6 @@
 import XCTest
 import AVFoundation
+import CAudioRing
 @testable import VoiceType
 
 /// Tests for `AudioCapture` through its interface, driven by the WAV-file
@@ -60,13 +61,25 @@ final class AudioCaptureTests: XCTestCase {
         { t, _ in amplitude * Float(sin(2 * .pi * hz * t)) }
     }
 
+    /// Begins a recording and waits until the source is running, so audio
+    /// pushed next is captured.
+    private func begin(_ capture: AudioCapture) async {
+        let started = expectation(description: "source started")
+        capture.begin { error in
+            XCTAssertNil(error)
+            started.fulfill()
+        }
+        await fulfillment(of: [started], timeout: 5)
+    }
+
     /// Ends the recording, then pushes `postRoll` seconds of source audio (the
     /// audio that arrives after the key is released), and waits for the result.
-    private func end(_ capture: AudioCapture, _ source: WavFileSource, thenPush postRoll: Double = 0) async -> [Float] {
+    private func end(_ capture: AudioCapture, _ source: WavFileSource? = nil, thenPush postRoll: Double = 0) async -> [Float] {
         var result: [Float] = []
         let ended = expectation(description: "recording ended")
         capture.end { result = $0; ended.fulfill() }
-        if postRoll > 0 { source.push(seconds: postRoll) }
+        _ = capture.retainedSampleCount   // the end is registered: what follows is post-roll
+        if postRoll > 0 { source?.push(seconds: postRoll) }
         await fulfillment(of: [ended], timeout: 5)
         return result
     }
@@ -75,7 +88,7 @@ final class AudioCaptureTests: XCTestCase {
     private func recordWholeFile(_ url: URL) async throws -> [Float] {
         let source = try WavFileSource(url: url)
         let capture = AudioCapture(source: source)
-        try capture.begin()
+        await begin(capture)
         source.push()
         return await end(capture, source)
     }
@@ -133,7 +146,7 @@ final class AudioCaptureTests: XCTestCase {
         let source = try WavFileSource(url: url)
         let capture = AudioCapture(source: source)
 
-        try capture.begin()
+        await begin(capture)
         source.push(seconds: 0.5)
         let samples = await end(capture, source, thenPush: 0.5)
 
@@ -155,13 +168,13 @@ final class AudioCaptureTests: XCTestCase {
         let source = try WavFileSource(url: try toneFromTwoSeconds())
         let capture = AudioCapture(source: source)
         // A first recording leaves the source warm.
-        try capture.begin()
+        await begin(capture)
         source.push(seconds: 0.5)
         _ = await end(capture, source, thenPush: 0.2)
         // The tone starts at 2.0 s; the key goes down at 2.2 s.
         source.push(seconds: 1.5)
 
-        try capture.begin()
+        await begin(capture)
         source.push(seconds: 0.5)
         let samples = await end(capture, source, thenPush: 0.2)
 
@@ -175,7 +188,7 @@ final class AudioCaptureTests: XCTestCase {
         let capture = AudioCapture(source: source)
         source.push(seconds: 2.2)   // nothing is listening yet
 
-        try capture.begin()
+        await begin(capture)
         source.push(seconds: 0.5)
         let samples = await end(capture, source, thenPush: 0.2)
 
@@ -188,7 +201,7 @@ final class AudioCaptureTests: XCTestCase {
     func testSourceStaysWarmFor30sAfterARecordingThenStops() async throws {
         let source = try WavFileSource(url: try makeWav(rate: 16_000, seconds: 40) { _, _ in 0 })
         let capture = AudioCapture(source: source)
-        try capture.begin()
+        await begin(capture)
         source.push(seconds: 0.5)
         _ = await end(capture, source, thenPush: 0.2)
 
@@ -218,7 +231,7 @@ final class AudioCaptureTests: XCTestCase {
         try capture.warmUp()
         source.push(seconds: 1)
 
-        try capture.begin()
+        await begin(capture)
         source.push(seconds: 1)   // held for the full max duration
         let samples = await end(capture, source, thenPush: 0.2)
 
@@ -230,7 +243,7 @@ final class AudioCaptureTests: XCTestCase {
         let source = try WavFileSource(url: try makeWav(rate: 48_000, seconds: 4, sine(440)))
         let capture = AudioCapture(source: source, maxSeconds: { 1 })
 
-        try capture.begin()
+        await begin(capture)
         source.push(seconds: 2)
         let atTwoSeconds = capture.retainedSampleCount
         source.push(seconds: 1)
@@ -245,7 +258,7 @@ final class AudioCaptureTests: XCTestCase {
         let source = try WavFileSource(url: try makeWav(rate: 8_000, seconds: 32 * 60) { _, _ in 0 })
         let capture = AudioCapture(source: source, maxSeconds: { 0 })
 
-        try capture.begin()
+        await begin(capture)
         source.push(seconds: 31 * 60)
 
         let ceiling = 30 * 60 * 16_000 + 8_000   // + 0.5 s of pre- and post-roll
@@ -259,13 +272,13 @@ final class AudioCaptureTests: XCTestCase {
     func testRecordingAfterAFormatChangeIsStillCorrect() async throws {
         let source = try WavFileSource(url: try makeWav(rate: 48_000, seconds: 2, sine(440)))
         let capture = AudioCapture(source: source)
-        try capture.begin()
+        await begin(capture)
         source.push(seconds: 1)
         _ = await end(capture, source, thenPush: 0.2)
 
         // E.g. a headset is plugged in: the source now runs at 44.1 kHz.
         try source.open(try makeWav(rate: 44_100, seconds: 2, sine(880)))
-        try capture.begin()
+        await begin(capture)
         source.push(seconds: 1)
         let samples = await end(capture, source, thenPush: 0.2)
 
@@ -276,13 +289,13 @@ final class AudioCaptureTests: XCTestCase {
     func testRouteChangeNoticeWithNothingChangedKeepsTheSourceRunning() async throws {
         let source = try WavFileSource(url: try makeWav(rate: 48_000, seconds: 3, sine(440)))
         let capture = AudioCapture(source: source)
-        try capture.begin()
+        await begin(capture)
         source.push(seconds: 1)
         _ = await end(capture, source, thenPush: 0.5)
         let warm = capture.retainedSampleCount
 
-        // AVAudioEngine posts these for no-op changes too, e.g. right after a
-        // device is selected; restarting on each one loops forever.
+        // Core Audio reports property changes that change nothing too, e.g.
+        // as a device is selected; restarting on each one loops forever.
         source.onEvent?(.routeChanged)
 
         XCTAssertEqual(capture.retainedSampleCount, warm, "Pre-roll survives: no restart happened")
@@ -293,7 +306,7 @@ final class AudioCaptureTests: XCTestCase {
         let url = try makeWav(rate: 48_000, seconds: 3, sine(440))
         let source = try WavFileSource(url: url)
         let capture = AudioCapture(source: source)
-        try capture.begin()
+        await begin(capture)
         source.push(seconds: 0.5)
         _ = await end(capture, source, thenPush: 0.2)
 
@@ -303,7 +316,7 @@ final class AudioCaptureTests: XCTestCase {
         }
         XCTAssertFalse(source.isRunning, "The fourth restart within the window is refused")
 
-        try capture.begin()
+        await begin(capture)
         source.push(seconds: 1)
         let samples = await end(capture, source, thenPush: 0.2)
         XCTAssertEqual(samples.count, 19_200, accuracy: 8, "The next recording starts the source fresh")
@@ -325,7 +338,7 @@ final class AudioCaptureTests: XCTestCase {
 
     func testEndFinishesEvenWhenThePostRollNeverArrives() async throws {
         let capture = AudioCapture(source: SilentSource(stallTimeout: nil))
-        try capture.begin()
+        await begin(capture)
 
         let finished = expectation(description: "end completes")
         capture.end { _ in finished.fulfill() }
@@ -336,12 +349,72 @@ final class AudioCaptureTests: XCTestCase {
     func testASourceThatStopsDeliveringIsRestarted() async throws {
         let source = SilentSource(stallTimeout: 0.05)
         let capture = AudioCapture(source: source)
-        try capture.begin()
+        await begin(capture)
 
         try await Task.sleep(nanoseconds: 300_000_000)
         _ = capture.retainedSampleCount   // wait for the capture's queue
 
         XCTAssertGreaterThan(source.starts, 1, "A stalled source is restarted")
         XCTAssertLessThanOrEqual(source.starts, 4, "…but never in a loop: at most 3 restarts in the window")
+    }
+
+    // MARK: - Cold start
+
+    /// A mic that takes `delay` to come up, then delivers 0.1 s of a 48 kHz
+    /// tone: its first audio.
+    private final class SlowSource: AudioSource {
+        var onEvent: ((AudioSourceEvent) -> Void)?
+        let needsRestart = false
+        let stallTimeout: TimeInterval? = nil
+        private let delay: TimeInterval
+        private let error: Error?
+        init(delay: TimeInterval, failingWith error: Error? = nil) {
+            self.delay = delay
+            self.error = error
+        }
+        func start(_ input: CaptureInput) throws -> Double {
+            Thread.sleep(forTimeInterval: delay)
+            if let error { throw error }
+            var tone = (0..<4_800).map { 0.5 * Float(sin(2 * .pi * 440 * Double($0) / 48_000)) }
+            tone.withUnsafeMutableBufferPointer { samples in
+                var buffers = AudioBufferList(mNumberBuffers: 1, mBuffers: AudioBuffer(
+                    mNumberChannels: 1, mDataByteSize: UInt32(samples.count * 4), mData: samples.baseAddress))
+                _ = vt_ring_write_downmix(input.ring, &buffers, UInt32(samples.count))
+            }
+            return 48_000
+        }
+        func stop() {}
+    }
+
+    func testColdBeginReturnsAtOnceAndStillRecordsTheFirstAudio() async throws {
+        let capture = AudioCapture(source: SlowSource(delay: 0.5))
+        let started = expectation(description: "source started")
+
+        let elapsed = ContinuousClock().measure {
+            capture.begin { error in
+                XCTAssertNil(error)
+                started.fulfill()
+            }
+        }
+
+        XCTAssertLessThan(elapsed, .milliseconds(100), "Main isn't held up by the mic starting")
+        XCTAssertTrue(capture.isRecording)
+        await fulfillment(of: [started], timeout: 5)
+        let samples = await end(capture)
+        XCTAssertEqual(samples.count, 1_600, accuracy: 8, "The recording begins at the first sample")
+        XCTAssertGreaterThan(rms(samples[100..<1_500]), 0.3)
+    }
+
+    func testAColdStartThatFailsEndsTheRecordingAndReportsIt() async throws {
+        let capture = AudioCapture(source: SlowSource(delay: 0.1, failingWith: MicSourceError.noInputAvailable))
+        let started = expectation(description: "start reported")
+        var reported: Error?
+
+        capture.begin { reported = $0; started.fulfill() }
+        XCTAssertTrue(capture.isRecording, "Recording until the failure is known")
+        await fulfillment(of: [started], timeout: 5)
+
+        XCTAssertNotNil(reported)
+        XCTAssertFalse(capture.isRecording)
     }
 }
