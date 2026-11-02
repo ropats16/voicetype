@@ -15,14 +15,46 @@ private final class IndicatorPanel: NSPanel {
 final class IndicatorController {
     private let model = IndicatorModel()
     private var panel: IndicatorPanel?
+    private var wakeObserver: NSObjectProtocol?
+    private var screenObserver: NSObjectProtocol?
 
     /// Inset from the screen's visible edges.
     private let edgeInset: CGFloat = 16
+
+    /// This is an `.accessory` background agent, so the process (and this cached
+    /// panel) survives sleep/wake. A borderless agent panel loses its all-Spaces
+    /// association and can fail to re-realize after the display sleeps or the
+    /// screen layout changes, stranding the pill on a single Space or making it
+    /// invisible on all of them even though dictation keeps working. Watch for
+    /// those events and drop the stale panel so the next `showRecording` rebuilds
+    /// it from scratch with fresh window-server state.
+    init() {
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.refreshForSystemStateChange() }
+
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.refreshForSystemStateChange() }
+    }
+
+    deinit {
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+        }
+        if let screenObserver {
+            NotificationCenter.default.removeObserver(screenObserver)
+        }
+    }
 
     func showRecording() {
         model.phase = .recording
         model.level = 0
         let panel = ensurePanel()
+        // Reassert behavior on every show — cheap insurance against window-server
+        // state loss from events we don't explicitly observe (fullscreen /
+        // Mission Control transitions can also reset collection behavior).
+        applyPanelBehavior(panel)
         positionBottomLeft(panel)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
@@ -68,13 +100,36 @@ final class IndicatorController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.level = .statusBar
         panel.ignoresMouseEvents = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
-        panel.hidesOnDeactivate = false
         panel.contentView = hosting
+        applyPanelBehavior(panel)
         self.panel = panel
         return panel
+    }
+
+    /// Window-server state (float level + join-all-Spaces) that macOS can silently
+    /// drop across sleep/wake and Space transitions. Set at creation and
+    /// reasserted on every show so it can't go stale.
+    private func applyPanelBehavior(_ panel: IndicatorPanel) {
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
+    }
+
+    /// Sleep/wake or screen-layout change: the cached panel's window-server state
+    /// may be stale. If it's on-screen (recording right now), re-pin and reassert
+    /// in place; otherwise discard it so the next show rebuilds a clean one.
+    private func refreshForSystemStateChange() {
+        guard let panel else { return }
+        if panel.isVisible {
+            applyPanelBehavior(panel)
+            positionBottomLeft(panel)
+            panel.orderFrontRegardless()
+        } else {
+            panel.orderOut(nil)
+            self.panel = nil
+        }
+        Log.debug("Indicator panel refreshed after system state change.")
     }
 
     /// Pin the panel to the bottom-left corner of whichever screen the mouse is
