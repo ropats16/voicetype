@@ -31,6 +31,10 @@ protocol AudioSource: AnyObject {
     /// mic was changed in Settings).
     var needsRestart: Bool { get }
 
+    /// How long the running source may write nothing before the capture treats
+    /// it as stalled and restarts it; `nil` = never (sources fed by hand).
+    var stallTimeout: TimeInterval? { get }
+
     /// Starts writing audio into `input.ring` and returns its sample rate.
     func start(_ input: CaptureInput) throws -> Double
 

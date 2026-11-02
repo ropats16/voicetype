@@ -25,6 +25,9 @@ final class WavFileSource: AudioSource {
     /// After `open` the source has stopped itself; otherwise nothing changes.
     var needsRestart: Bool { !isRunning }
 
+    /// Time is virtual: silence between `push` calls isn't a stall.
+    let stallTimeout: TimeInterval? = nil
+
     /// Switches to another file, as if the input device changed: a running
     /// source stops and reports a route change, so the capture restarts it.
     func open(_ url: URL) throws {

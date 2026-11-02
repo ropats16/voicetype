@@ -308,4 +308,40 @@ final class AudioCaptureTests: XCTestCase {
         let samples = await end(capture, source, thenPush: 0.2)
         XCTAssertEqual(samples.count, 19_200, accuracy: 8, "The next recording starts the source fresh")
     }
+
+    // MARK: - Silent sources
+
+    /// A running source that never writes: a mic gone quiet under a format
+    /// change.
+    private final class SilentSource: AudioSource {
+        var onEvent: ((AudioSourceEvent) -> Void)?
+        let needsRestart = false
+        let stallTimeout: TimeInterval?
+        private(set) var starts = 0
+        init(stallTimeout: TimeInterval?) { self.stallTimeout = stallTimeout }
+        func start(_ input: CaptureInput) throws -> Double { starts += 1; return 48_000 }
+        func stop() {}
+    }
+
+    func testEndFinishesEvenWhenThePostRollNeverArrives() async throws {
+        let capture = AudioCapture(source: SilentSource(stallTimeout: nil))
+        try capture.begin()
+
+        let finished = expectation(description: "end completes")
+        capture.end { _ in finished.fulfill() }
+
+        await fulfillment(of: [finished], timeout: AudioCapture.postRollSeconds + AudioCapture.endGraceSeconds + 1)
+    }
+
+    func testASourceThatStopsDeliveringIsRestarted() async throws {
+        let source = SilentSource(stallTimeout: 0.05)
+        let capture = AudioCapture(source: source)
+        try capture.begin()
+
+        try await Task.sleep(nanoseconds: 300_000_000)
+        _ = capture.retainedSampleCount   // wait for the capture's queue
+
+        XCTAssertGreaterThan(source.starts, 1, "A stalled source is restarted")
+        XCTAssertLessThanOrEqual(source.starts, 4, "…but never in a loop: at most 3 restarts in the window")
+    }
 }

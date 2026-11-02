@@ -59,6 +59,10 @@ final class MicSource: AudioSource {
             || deviceToOpen() != activeDeviceID
     }
 
+    /// A live mic delivers every few milliseconds; a second of nothing means
+    /// the engine went quiet under a format change.
+    let stallTimeout: TimeInterval? = 1.0
+
     /// The input to open: the configured mic when it's available, else the
     /// system default (e.g. the configured mic was unplugged).
     func deviceToOpen() -> AudioDeviceID? {

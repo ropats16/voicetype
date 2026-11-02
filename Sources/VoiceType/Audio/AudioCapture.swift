@@ -34,6 +34,9 @@ final class AudioCapture {
     /// Longest press when the config sets no limit, so memory is always
     /// bounded (~115 MB).
     static let ceilingSeconds = 30.0 * 60
+    /// Slack past the post-roll before `end` gives up waiting for audio, so a
+    /// source that went silent can't leave a recording unfinished.
+    static let endGraceSeconds = 0.8
 
     /// 0...1 RMS level of the recording, for the waveform UI.
     var onLevel: ((Float) -> Void)?
@@ -64,6 +67,10 @@ final class AudioCapture {
     private var recordingCap = Int.max
     /// Set by `end`: post-roll samples still to record, and who gets the result.
     private var pendingEnd: (remaining: Int, completion: ([Float]) -> Void)?
+    /// Counts `end` calls, so a late end timeout can't finish a newer recording.
+    private var endCount = 0
+    /// When the source last wrote audio, for the stall check.
+    private var lastAudioAt: TimeInterval = 0
     /// When route-change restarts happened, to stop a restart loop.
     private var recentRestarts: [TimeInterval] = []
     private static let maxRestartsPerWindow = 3
@@ -120,7 +127,14 @@ final class AudioCapture {
         queue.async { [self] in
             drainRingAndStopIfIdle()
             pendingEnd = (Int(Self.postRollSeconds * Self.sampleRate), completion)
-            if !isRunning { finishRecording() }
+            endCount += 1
+            if !isRunning { finishRecording(); return }
+            let thisEnd = endCount
+            queue.asyncAfter(deadline: .now() + Self.postRollSeconds + Self.endGraceSeconds) { [self] in
+                guard endCount == thisEnd, pendingEnd != nil else { return }
+                Log.error("Post-roll audio never arrived; finishing the recording without it.")
+                finishRecording()
+            }
         }
     }
 
@@ -218,6 +232,7 @@ final class AudioCapture {
         self.outputBuffer = outputBuffer
         isRunning = true
         idleSamples = 0
+        lastAudioAt = ProcessInfo.processInfo.systemUptime
 
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now(), repeating: .milliseconds(10))
@@ -248,30 +263,42 @@ final class AudioCapture {
             stopSource()
         case .routeChanged:
             guard isRunning, source.needsRestart else { return }
-            stopSource()
-            // A route that keeps changing (or a source that keeps reporting
-            // it) would otherwise restart the mic forever; stop instead, and
-            // let the next `begin` start it fresh.
-            let now = ProcessInfo.processInfo.systemUptime
-            recentRestarts = recentRestarts.filter { now - $0 < Self.restartWindowSeconds } + [now]
-            guard recentRestarts.count <= Self.maxRestartsPerWindow else {
-                Log.error("Audio route keeps changing; stopping the microphone until the next recording.")
-                recentRestarts = []
-                return
-            }
-            Log.info("Audio route changed; restarting capture.")
-            do { try startSource() } catch {
-                Log.error("Could not restart audio capture: \(error.localizedDescription)")
-            }
+            restartSource(because: "Audio route changed")
+        }
+    }
+
+    /// Restarts a running source, keeping any recording in progress.
+    private func restartSource(because reason: String) {
+        stopSource()
+        // A route that keeps changing (or a source that keeps reporting it, or
+        // keeps stalling) would otherwise restart the mic forever; stop
+        // instead, and let the next `begin` start it fresh.
+        let now = ProcessInfo.processInfo.systemUptime
+        recentRestarts = recentRestarts.filter { now - $0 < Self.restartWindowSeconds } + [now]
+        guard recentRestarts.count <= Self.maxRestartsPerWindow else {
+            Log.error("\(reason) again; stopping the microphone until the next recording.")
+            recentRestarts = []
+            return
+        }
+        Log.info("\(reason); restarting capture.")
+        do { try startSource() } catch {
+            Log.error("Could not restart audio capture: \(error.localizedDescription)")
         }
     }
 
     // MARK: - Draining + resampling (on queue)
 
-    /// Resamples everything the source has written, then stops the source if
-    /// it has idled past `idleSeconds`.
+    /// Resamples everything the source has written, restarts it if it has
+    /// stalled, then stops it if it has idled past `idleSeconds`.
     private func drainRingAndStopIfIdle() {
         drainRing()
+        // E.g. AirPods switching to call quality as the mic opens: the device
+        // changes format under the engine, which can go silent without the
+        // change ever looking like one when it's reported.
+        if isRunning, let timeout = source.stallTimeout,
+           ProcessInfo.processInfo.systemUptime - lastAudioAt > timeout {
+            restartSource(because: "Microphone stopped delivering audio")
+        }
         if isRunning && !keepWarm && recording == nil && idleSamples >= Int(Self.idleSeconds * Self.sampleRate) {
             Log.info("Microphone idle for \(Int(Self.idleSeconds))s; stopping.")
             stopSource()
@@ -283,6 +310,7 @@ final class AudioCapture {
         while true {
             let n = vt_ring_read(ring, sourceBuffer.floatChannelData![0], sourceBuffer.frameCapacity)
             guard n > 0 else { return }
+            lastAudioAt = ProcessInfo.processInfo.systemUptime
             sourceBuffer.frameLength = n
             convert(sourceBuffer)
         }
