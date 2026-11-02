@@ -1,7 +1,7 @@
 import AppKit
 
-/// Menu-bar-only agent. Owns app state, the status item, permission flow, model
-/// loading, and the hotkey → dictation wiring.
+/// Menu-bar-only agent. Owns app state, the status item, permission flow, the
+/// transcription engine, and the hotkey → dictation wiring.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let configStore = ConfigStore()
     private let permissions = Permissions()
@@ -10,21 +10,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var hotkeys: HotkeyManager?
     private var dictation: DictationController?
-    private var transcriber: Transcriber?
+    private lazy var engine: TranscriptionEngine = .whisper(
+        modelPath: configStore.config.modelPath,
+        language: configStore.config.language,
+        threads: configStore.config.threads
+    )
     private var settingsWindowController: SettingsWindowController?
 
     private var readinessTimer: Timer?
     private var hasLoggedReady = false
 
-    private enum State {
-        case loadingModel
-        case modelMissing
-        case needsAccessibility
-        case needsMicrophone
-        case ready
-    }
-    private var modelLoaded = false
-    private var modelMissing = false
     private var configIssueCount = 0
     private var hasConfigErrors = false
 
@@ -37,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         reportConfigIssues()
         setupStatusItem()
         requestPermissionsIfNeeded()
-        loadModelAsync()
+        startEngine()
 
         // Re-check readiness until everything is wired (catches the user
         // granting Accessibility/Microphone while the app is already running).
@@ -110,8 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openModels.target = self
         menu.addItem(openModels)
 
-        if modelMissing {
-            let fix = NSMenuItem(title: "Model missing — run `make setup`", action: nil, keyEquivalent: "")
+        if let hint = engineFixHint {
+            let fix = NSMenuItem(title: hint, action: nil, keyEquivalent: "")
             fix.isEnabled = false
             menu.addItem(fix)
         }
@@ -129,9 +124,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
+    /// Disabled menu line telling the user how to fix a model problem, if any.
+    private var engineFixHint: String? {
+        switch engine.status {
+        case .missing: return "Model missing — run `make setup`"
+        case .failed: return "Model failed to load — see log"
+        case .notLoaded, .loading, .ready: return nil
+        }
+    }
+
     private var statusText: String {
-        if modelMissing { return "Model missing" }
-        if !modelLoaded { return "Loading model…" }
+        switch engine.status {
+        case .missing: return "Model missing"
+        case .notLoaded, .loading: return "Loading model…"
+        case .failed: return "Model failed to load"
+        case .ready: break
+        }
         if !permissions.isAccessibilityTrusted() { return "Needs Accessibility" }
         if permissions.micStatus != .authorized { return "Needs Microphone" }
         return "Ready"
@@ -166,55 +174,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Model loading
+    // MARK: - Transcription engine
 
-    private func loadModelAsync() {
+    private func startEngine() {
+        engine.onStatusChange = { [weak self] status in self?.engineStatusChanged(status) }
+        engine.load()
+    }
+
+    /// Called on main with each status the engine reports.
+    private func engineStatusChanged(_ status: TranscriptionStatus) {
         let path = configStore.config.modelPath
-        guard FileManager.default.fileExists(atPath: path) else {
-            modelMissing = true
+        switch status {
+        case .missing:
             Log.error("Model not found at \(path). Run `make setup`.")
             Notifier.notify(
                 title: "VoiceType: model not found",
                 body: "Model file not found at \(path). Run `make setup` to download it."
             )
-            rebuildMenu()
-            return
+        case .failed(let reason):
+            Log.error("Model load failed: \(reason)")
+            Notifier.notify(
+                title: "VoiceType: model failed to load",
+                body: "\(reason) Try `make setup` or `make model MODEL=<name>` to re-download it."
+            )
+        case .ready:
+            Log.info("Transcription model loaded.")
+        case .notLoaded, .loading:
+            break
         }
-        let language = configStore.config.language
-        let threads = configStore.config.threads
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            do {
-                let t = try WhisperTranscriber(modelPath: path, language: language, threads: threads)
-                DispatchQueue.main.async {
-                    self?.transcriber = t
-                    self?.modelLoaded = true
-                    Log.info("Whisper model loaded.")
-                    self?.evaluateReadiness()
-                    self?.rebuildMenu()
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self?.modelMissing = true
-                    Log.error("Model load failed: \(error.localizedDescription)")
-                    Notifier.notify(
-                        title: "VoiceType: model failed to load",
-                        body: "\(error.localizedDescription) Try `make setup` or `make model MODEL=<name>` to re-download it."
-                    )
-                    self?.rebuildMenu()
-                }
-            }
-        }
+        evaluateReadiness()
     }
 
     // MARK: - Readiness wiring
 
     private func evaluateReadiness() {
         rebuildMenu()
-        guard let transcriber, modelLoaded else { return }
+        guard engine.status == .ready else { return }
         guard permissions.isAccessibilityTrusted() else { return }
 
         if dictation == nil {
-            dictation = DictationController(transcriber: transcriber, configStore: configStore)
+            dictation = DictationController(engine: engine, configStore: configStore)
         }
         if hotkeys == nil {
             reloadHotkeys()

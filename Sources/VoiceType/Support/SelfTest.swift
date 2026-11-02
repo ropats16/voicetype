@@ -25,10 +25,25 @@ enum SelfTest {
             }
 
             err("Loading model: \(model)")
-            let transcriber = try WhisperTranscriber(modelPath: model, language: "en", threads: 0)
+            let engine = TranscriptionEngine.whisper(modelPath: model, language: "en", threads: 0)
+            let loadStart = Date()
+            engine.load()
+            while engine.status == .loading { Thread.sleep(forTimeInterval: 0.01) }
+            switch engine.status {
+            case .ready:
+                err("Model loaded and warmed up in \(String(format: "%.2f", Date().timeIntervalSince(loadStart)))s")
+            case .missing:
+                err("selftest failed: model file not found at \(model)")
+                return 1
+            case .failed(let reason):
+                err("selftest failed: \(reason)")
+                return 1
+            case .notLoaded, .loading:
+                break   // unreachable: load() was called and the loop above waits it out
+            }
 
             let start = Date()
-            let text = try transcriber.transcribe(samples: audio.samples)
+            let text = try blocking { try await engine.transcribe(audio.samples).text }
             let elapsed = Date().timeIntervalSince(start)
 
             err("Transcribed in \(String(format: "%.2f", elapsed))s")
@@ -38,6 +53,19 @@ enum SelfTest {
             err("selftest failed: \(error.localizedDescription)")
             return 1
         }
+    }
+
+    /// Runs async work to completion from this synchronous CLI path. The
+    /// engine never needs the main thread, so blocking it here is safe.
+    private static func blocking<T>(_ work: @escaping () async throws -> T) throws -> T {
+        var result: Result<T, Error>!
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            do { result = .success(try await work()) } catch { result = .failure(error) }
+            done.signal()
+        }
+        done.wait()
+        return try result.get()
     }
 
     private static func err(_ s: String) {

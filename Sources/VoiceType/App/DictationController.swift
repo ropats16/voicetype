@@ -7,7 +7,8 @@ import AppKit
 ///   hold key up   → stop, show spinner, transcribe off-thread,
 ///                   insert at caret, restore clipboard, dismiss
 ///
-/// Owns the recorder, indicator, inserter, and transcriber; the app delegate
+/// Owns the recorder, indicator and inserter, and submits audio to the shared
+/// transcription engine (which serializes jobs itself); the app delegate
 /// wires it to the hotkey manager. All methods must be called on the main
 /// thread (the hotkey callbacks and timers already hop there).
 final class DictationController {
@@ -15,7 +16,7 @@ final class DictationController {
     private let indicator = IndicatorController()
     private let inserter = TextInserter()
     private let caretLocator = CaretLocator()
-    private let transcriber: Transcriber
+    private let engine: TranscriptionEngine
     private let configStore: ConfigStore
     private let soundCues: SoundCues
 
@@ -23,11 +24,10 @@ final class DictationController {
     private let minDuration: Double = 0.3
 
     private var maxDurationTimer: Timer?
-    private let work = DispatchQueue(label: "com.local.VoiceType.transcribe", qos: .userInitiated)
     private var isBusy = false
 
-    init(transcriber: Transcriber, configStore: ConfigStore) {
-        self.transcriber = transcriber
+    init(engine: TranscriptionEngine, configStore: ConfigStore) {
+        self.engine = engine
         self.configStore = configStore
         self.soundCues = SoundCues(isEnabled: { [weak configStore] in
             configStore?.config.soundCues ?? false
@@ -94,12 +94,12 @@ final class DictationController {
         isBusy = true
         let trailingSpace = config.trailingSpace
 
-        work.async { [weak self] in
-            guard let self else { return }
-            let result = Result { try self.transcriber.transcribe(samples: samples) }
-            DispatchQueue.main.async {
-                self.finishTranscription(result, trailingSpace: trailingSpace)
-            }
+        // Runs on main; only the `await` leaves it, on the engine's queue.
+        Task { @MainActor [weak self, engine] in
+            let result: Result<String, Error>
+            do { result = .success(try await engine.transcribe(samples).text) }
+            catch { result = .failure(error) }
+            self?.finishTranscription(result, trailingSpace: trailingSpace)
         }
     }
 

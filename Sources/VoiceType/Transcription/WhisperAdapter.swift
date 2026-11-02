@@ -1,21 +1,27 @@
 import Foundation
 import CWhisper
 
+extension TranscriptionEngine {
+    /// The app's engine: whisper.cpp (Metal-accelerated) behind the engine's
+    /// load, warm-up and job queue.
+    static func whisper(modelPath: String, language: String, threads: Int) -> TranscriptionEngine {
+        TranscriptionEngine(modelPath: modelPath) { path in
+            try WhisperAdapter(modelPath: path, language: language, threads: threads)
+        }
+    }
+}
+
 /// Swift wrapper over the whisper.cpp C API, Metal-accelerated.
 ///
 /// A whisper context is **not** thread-safe, so transcription must be
-/// serialized. `DictationController` only ever calls `transcribe` from a single
-/// serial queue, so no internal locking is needed here.
-final class WhisperTranscriber: Transcriber {
+/// serialized. `TranscriptionEngine` only ever calls it from its own serial
+/// queue, so no internal locking is needed here.
+final class WhisperAdapter: TranscriptionAdapter {
     private let ctx: OpaquePointer
     private let language: String
     private let threads: Int32
 
     init(modelPath: String, language: String, threads: Int) throws {
-        guard FileManager.default.fileExists(atPath: modelPath) else {
-            throw TranscriptionError.modelNotFound(path: modelPath)
-        }
-
         var cparams = whisper_context_default_params()
         cparams.use_gpu = true        // Metal on Apple Silicon
         cparams.flash_attn = true     // recommended with Metal
@@ -34,8 +40,8 @@ final class WhisperTranscriber: Transcriber {
         whisper_free(ctx)
     }
 
-    func transcribe(samples: [Float]) throws -> String {
-        guard !samples.isEmpty else { return "" }
+    func transcribe(samples: [Float]) throws -> [Transcript.Segment] {
+        guard !samples.isEmpty else { return [] }
 
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
         // `language` must stay valid for the duration of whisper_full (sync call).
@@ -44,7 +50,7 @@ final class WhisperTranscriber: Transcriber {
         params.language = UnsafePointer(langC)
         params.n_threads = threads
         params.translate = false
-        params.no_timestamps = true
+        params.no_timestamps = false  // segments carry start/end times
         params.print_realtime = false
         params.print_progress = false
         params.print_timestamps = false
@@ -57,13 +63,13 @@ final class WhisperTranscriber: Transcriber {
         }
         guard rc == 0 else { throw TranscriptionError.inferenceFailed }
 
-        var text = ""
-        let n = whisper_full_n_segments(ctx)
-        for i in 0..<n {
-            if let seg = whisper_full_get_segment_text(ctx, i) {
-                text += String(cString: seg)
-            }
+        // whisper.cpp reports segment times in 10 ms ticks.
+        return (0..<whisper_full_n_segments(ctx)).map { i in
+            Transcript.Segment(
+                text: whisper_full_get_segment_text(ctx, i).map { String(cString: $0) } ?? "",
+                start: TimeInterval(whisper_full_get_segment_t0(ctx, i)) / 100,
+                end: TimeInterval(whisper_full_get_segment_t1(ctx, i)) / 100
+            )
         }
-        return text
     }
 }

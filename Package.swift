@@ -186,6 +186,17 @@ let cxxSettings: [CXXSetting] =
 let cwhisperFrameworks: [LinkerSetting] =
     [.linkedFramework("Foundation")] + archFrameworks + [.linkedFramework("Accelerate")]
 
+// The CWhisper module map's shim #includes whisper.h, which in turn includes
+// ggml.h/ggml-cpu.h. SwiftPM doesn't propagate the C target's headerSearchPaths
+// to the importer, so make those dirs visible to the Clang importer of every
+// Swift target that imports CWhisper (paths relative to the package root).
+let whisperImporterSettings: [SwiftSetting] = [
+    .unsafeFlags([
+        "-Xcc", "-ISources/CWhisper/whisper.cpp/include",
+        "-Xcc", "-ISources/CWhisper/whisper.cpp/ggml/include",
+    ]),
+]
+
 let package = Package(
     name: "VoiceType",
     platforms: [.macOS(.v14)],
@@ -205,17 +216,7 @@ let package = Package(
             name: "VoiceType",
             dependencies: ["CWhisper"],
             path: "Sources/VoiceType",
-            swiftSettings: [
-                // The CWhisper module map's shim #includes whisper.h, which in
-                // turn includes ggml.h/ggml-cpu.h. SwiftPM doesn't propagate the
-                // C target's headerSearchPaths to the importer, so make those
-                // dirs visible to the Clang importer here (paths relative to the
-                // package root).
-                .unsafeFlags([
-                    "-Xcc", "-ISources/CWhisper/whisper.cpp/include",
-                    "-Xcc", "-ISources/CWhisper/whisper.cpp/ggml/include",
-                ]),
-            ],
+            swiftSettings: whisperImporterSettings,
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("AVFoundation"),
@@ -225,7 +226,10 @@ let package = Package(
         .testTarget(
             name: "VoiceTypeTests",
             dependencies: ["VoiceType"],
-            path: "Tests/VoiceTypeTests"
+            path: "Tests/VoiceTypeTests",
+            // `@testable import VoiceType` re-imports CWhisper, so the test
+            // target's Clang importer needs the same header dirs.
+            swiftSettings: whisperImporterSettings
         ),
     ],
     cxxLanguageStandard: .cxx17
