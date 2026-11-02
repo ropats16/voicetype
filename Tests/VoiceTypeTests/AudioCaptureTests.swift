@@ -272,4 +272,40 @@ final class AudioCaptureTests: XCTestCase {
         XCTAssertEqual(samples.count, 19_200, accuracy: 8, "1 s held + 0.2 s post-roll, resampled at the new rate")
         XCTAssertEqual(frequency(samples), 880, accuracy: 2)
     }
+
+    func testRouteChangeNoticeWithNothingChangedKeepsTheSourceRunning() async throws {
+        let source = try WavFileSource(url: try makeWav(rate: 48_000, seconds: 3, sine(440)))
+        let capture = AudioCapture(source: source)
+        try capture.begin()
+        source.push(seconds: 1)
+        _ = await end(capture, source, thenPush: 0.5)
+        let warm = capture.retainedSampleCount
+
+        // AVAudioEngine posts these for no-op changes too, e.g. right after a
+        // device is selected; restarting on each one loops forever.
+        source.onEvent?(.routeChanged)
+
+        XCTAssertEqual(capture.retainedSampleCount, warm, "Pre-roll survives: no restart happened")
+        XCTAssertTrue(source.isRunning)
+    }
+
+    func testARouteThatKeepsChangingStopsTheSourceUntilTheNextRecording() async throws {
+        let url = try makeWav(rate: 48_000, seconds: 3, sine(440))
+        let source = try WavFileSource(url: url)
+        let capture = AudioCapture(source: source)
+        try capture.begin()
+        source.push(seconds: 0.5)
+        _ = await end(capture, source, thenPush: 0.2)
+
+        for _ in 0..<4 {
+            try source.open(url)
+            _ = capture.retainedSampleCount   // wait for the capture to handle it
+        }
+        XCTAssertFalse(source.isRunning, "The fourth restart within the window is refused")
+
+        try capture.begin()
+        source.push(seconds: 1)
+        let samples = await end(capture, source, thenPush: 0.2)
+        XCTAssertEqual(samples.count, 19_200, accuracy: 8, "The next recording starts the source fresh")
+    }
 }

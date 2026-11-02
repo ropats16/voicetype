@@ -30,6 +30,7 @@ final class MicSource: AudioSource {
     // Touched only on the capture's queue.
     private var engine: AVAudioEngine?
     private var activeDeviceID: AudioDeviceID?
+    private var openedFormat: AVAudioFormat?
     private var configObserver: NSObjectProtocol?
 
     /// `configuredUID` is read live at each start, so a mic change in Settings
@@ -45,25 +46,35 @@ final class MicSource: AudioSource {
         self.defaultDeviceID = defaultDeviceID
     }
 
+    /// True when the engine stopped itself, its input format changed, or a
+    /// different mic should be open. Configuration-change notifications also
+    /// arrive for no-op changes (e.g. right after selecting a device), so the
+    /// capture asks this before restarting rather than restarting on every one.
     var needsRestart: Bool {
-        engine != nil && deviceToOpen() != activeDeviceID
+        guard let engine else { return false }
+        let current = engine.inputNode.inputFormat(forBus: 0)
+        return !engine.isRunning
+            || current.sampleRate != openedFormat?.sampleRate
+            || current.channelCount != openedFormat?.channelCount
+            || deviceToOpen() != activeDeviceID
     }
 
     /// The input to open: the configured mic when it's available, else the
-    /// system default (e.g. the configured mic was unplugged). Pinning the
-    /// default explicitly lets `needsRestart` notice when the default changes.
+    /// system default (e.g. the configured mic was unplugged).
     func deviceToOpen() -> AudioDeviceID? {
         resolveDevice().device
     }
 
-    /// `missingUID` is the configured mic when it wasn't available.
-    private func resolveDevice() -> (device: AudioDeviceID?, missingUID: String?) {
+    /// `isDefault` means no configured mic is available, so the engine's own
+    /// default input is used. `missingUID` is the configured mic when it wasn't
+    /// available.
+    private func resolveDevice() -> (device: AudioDeviceID?, isDefault: Bool, missingUID: String?) {
         let configured = configuredUID()
         if let uid = AudioDevices.resolveSelection(configuredUID: configured, available: devices()),
            let id = deviceIDForUID(uid) {
-            return (id, nil)
+            return (id, false, nil)
         }
-        return (defaultDeviceID(), configured)
+        return (defaultDeviceID(), true, configured)
     }
 
     func start(_ input: CaptureInput) throws -> Double {
@@ -72,10 +83,12 @@ final class MicSource: AudioSource {
 
         // Select the device BEFORE reading the hardware format, so the format
         // is the chosen device's. A device that can't be selected falls back to
-        // the default — recording must never fail over a bad UID.
-        let (device, missingUID) = resolveDevice()
+        // the default — recording must never fail over a bad UID. The default
+        // is never selected explicitly: the input node already follows it, and
+        // selecting it anyway posts a configuration change on every start.
+        let (device, isDefault, missingUID) = resolveDevice()
         if let missingUID { Log.info("Preferred mic UID '\(missingUID)' not found; using system default.") }
-        if let device {
+        if let device, !isDefault {
             do { try inputNode.auAudioUnit.setDeviceID(device) } catch {
                 Log.info("Could not select input device \(device): \(error.localizedDescription). Using default.")
             }
@@ -95,8 +108,8 @@ final class MicSource: AudioSource {
         engine.attach(sink)
         engine.connect(inputNode, to: sink, format: format)
 
-        // Posted when the device's format changes or it goes away; the engine
-        // has already stopped itself by then.
+        // Posted when the device's format changes or it goes away, and
+        // sometimes for no-op changes; the capture checks `needsRestart`.
         configObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
         ) { [weak self] _ in self?.onEvent?(.routeChanged) }
@@ -110,6 +123,7 @@ final class MicSource: AudioSource {
         }
         self.engine = engine
         activeDeviceID = device
+        openedFormat = hardware
         return format.sampleRate
     }
 
@@ -118,6 +132,7 @@ final class MicSource: AudioSource {
         engine?.stop()
         engine = nil
         activeDeviceID = nil
+        openedFormat = nil
     }
 
     private func removeObserver() {

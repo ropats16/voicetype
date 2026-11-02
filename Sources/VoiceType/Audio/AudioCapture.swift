@@ -64,6 +64,10 @@ final class AudioCapture {
     private var recordingCap = Int.max
     /// Set by `end`: post-roll samples still to record, and who gets the result.
     private var pendingEnd: (remaining: Int, completion: ([Float]) -> Void)?
+    /// When route-change restarts happened, to stop a restart loop.
+    private var recentRestarts: [TimeInterval] = []
+    private static let maxRestartsPerWindow = 3
+    private static let restartWindowSeconds = 2.0
     /// Samples since the last recording ended, for the idle stop.
     private var idleSamples = 0
 
@@ -243,9 +247,19 @@ final class AudioCapture {
         case .ended:
             stopSource()
         case .routeChanged:
-            guard isRunning else { return }
-            Log.info("Audio route changed; restarting capture.")
+            guard isRunning, source.needsRestart else { return }
             stopSource()
+            // A route that keeps changing (or a source that keeps reporting
+            // it) would otherwise restart the mic forever; stop instead, and
+            // let the next `begin` start it fresh.
+            let now = ProcessInfo.processInfo.systemUptime
+            recentRestarts = recentRestarts.filter { now - $0 < Self.restartWindowSeconds } + [now]
+            guard recentRestarts.count <= Self.maxRestartsPerWindow else {
+                Log.error("Audio route keeps changing; stopping the microphone until the next recording.")
+                recentRestarts = []
+                return
+            }
+            Log.info("Audio route changed; restarting capture.")
             do { try startSource() } catch {
                 Log.error("Could not restart audio capture: \(error.localizedDescription)")
             }

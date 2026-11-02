@@ -12,8 +12,8 @@ struct CaptureInput {
 
 /// Something a source tells the capture, from any thread.
 enum AudioSourceEvent {
-    /// The input's route or format changed and the source stopped itself;
-    /// the capture restarts it so the next audio uses the new format.
+    /// The input's route or format may have changed; the capture restarts
+    /// the source if `needsRestart` says so.
     case routeChanged
     /// The source has no more audio (a WAV file hit its end).
     case ended
@@ -26,8 +26,9 @@ protocol AudioSource: AnyObject {
     /// Set once by the capture before the first `start`.
     var onEvent: ((AudioSourceEvent) -> Void)? { get set }
 
-    /// Whether a restart would open a different input than the running one,
-    /// e.g. after the mic was changed in Settings.
+    /// Whether the running source must be restarted: it stopped itself, its
+    /// format changed, or a different input should be open (e.g. after the
+    /// mic was changed in Settings).
     var needsRestart: Bool { get }
 
     /// Starts writing audio into `input.ring` and returns its sample rate.

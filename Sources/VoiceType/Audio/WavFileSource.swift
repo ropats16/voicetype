@@ -7,7 +7,6 @@ import CAudioRing
 /// and after a recording.
 final class WavFileSource: AudioSource {
     var onEvent: ((AudioSourceEvent) -> Void)?
-    let needsRestart = false
 
     private static let chunkFrames: AVAudioFrameCount = 4096
 
@@ -22,6 +21,9 @@ final class WavFileSource: AudioSource {
 
     /// Whether the capture has the source running.
     var isRunning: Bool { lock.withLock { input != nil } }
+
+    /// After `open` the source has stopped itself; otherwise nothing changes.
+    var needsRestart: Bool { !isRunning }
 
     /// Switches to another file, as if the input device changed: a running
     /// source stops and reports a route change, so the capture restarts it.
