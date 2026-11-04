@@ -4,6 +4,10 @@ import AppKit
 if CommandLine.arguments.contains("--selftest") {
     exit(SelfTest.run(arguments: CommandLine.arguments))
 }
+// Benchmark: run an engine over the bench fixtures, print a table, write JSON.
+if CommandLine.arguments.contains("--bench") {
+    exit(BenchCommand.run(arguments: CommandLine.arguments))
+}
 
 // Menu-bar-only agent: no Dock icon, no main menu/window by default.
 let app = NSApplication.shared

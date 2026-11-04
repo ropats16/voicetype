@@ -57,6 +57,9 @@ Key facts (current whisper.cpp has **no Package.swift**, so we vendor sources):
 ## Diagnostics
 - `VoiceType --selftest --model <ggml.bin> --wav <16kHz.wav>` loads the model and
   transcribes a WAV (no UI/permissions). Used to verify the engine.
+- `VoiceType --bench --model <file> [--engine <id>]` benchmarks an engine over
+  `.bench/fixtures` (from `scripts/fetch_bench_fixtures.sh`): latency, RTF, peak
+  RAM, load time, WER → table + JSON. See `plans/benchmark.md`.
 
 ## Code signing & TCC persistence (grants survive rebuilds)
 - **Problem:** ad-hoc signing (`codesign -s -`) gives a new CDHash every build,

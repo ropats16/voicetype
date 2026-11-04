@@ -32,3 +32,6 @@ third_party/whisper.cpp/**/*.a
 
 # Subagent-driven-development scratch (briefs, reports, ledger, review diffs)
 /.superpowers/
+
+# Benchmark fixtures + results (scripts/fetch_bench_fixtures.sh, VoiceType --bench)
+/.bench/

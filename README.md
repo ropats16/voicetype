@@ -328,3 +328,20 @@ resulting x86 binary with the [`--selftest` check](#troubleshooting) (a plain
 `x86_64` binary runs under Rosetta automatically).
 
 See `plans/IMPLEMENTATION-NOTES.md` for the durable build/integration details.
+
+### Benchmarking an engine
+
+`VoiceType --bench` runs a speech engine over fixed audio fixtures, through the
+same engine interface the app uses, and reports dictation latency (p50/p90),
+real-time factor on ~10 min of audio, peak memory, model load time and word
+error rate — as a table and a JSON file you can compare across Macs:
+
+```sh
+bash scripts/fetch_bench_fixtures.sh       # one time: ~331 MiB download → .bench/fixtures
+make build
+.build/release/VoiceType --bench \
+  --model "$HOME/Library/Application Support/VoiceType/models/ggml-medium.en.bin"
+```
+
+See [`plans/benchmark.md`](plans/benchmark.md) for options, what each number
+means, the JSON schema, fixture licenses, and how to add an engine.
