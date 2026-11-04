@@ -5,6 +5,10 @@ import Foundation
 /// Decoding is tolerant: any missing key falls back to its default, so a
 /// hand-edited or older config keeps working and new fields are forward-safe.
 struct Config: Codable {
+    /// A catalog model id (e.g. "small.en-q5_1") or "auto" = pick by chip + RAM.
+    var model: String
+    /// A specific model file; overrides `model` when non-empty. Older configs
+    /// carry one, so an existing choice keeps working.
     var modelPath: String
     var hold: KeyBinding
     var toggle: KeyBinding
@@ -16,10 +20,13 @@ struct Config: Codable {
     var language: String
     var threads: Int                // 0 = auto
     var keepMicWarm: Bool           // no Settings UI: mic stays on from launch (pre-roll on every dictation)
+    var keepModelWarm: Bool?        // nil = auto: unload when idle only on Macs with <= 8 GB
+    var modelIdleMinutes: Double    // idle time before unloading, when not kept warm
 
     static var defaults: Config {
         Config(
-            modelPath: Paths.defaultModelFile.path,
+            model: ModelSelection.automatic,
+            modelPath: "",
             hold: .controlShift,
             toggle: .controlOptionSpace,
             cancelKeyCode: KeyBinding.escapeKeyCode,
@@ -29,13 +36,17 @@ struct Config: Codable {
             soundCues: false,
             language: "en",
             threads: 0,
-            keepMicWarm: false
+            keepMicWarm: false,
+            keepModelWarm: nil,
+            modelIdleMinutes: 5
         )
     }
 
-    init(modelPath: String, hold: KeyBinding, toggle: KeyBinding, cancelKeyCode: Int,
+    init(model: String = ModelSelection.automatic, modelPath: String, hold: KeyBinding, toggle: KeyBinding, cancelKeyCode: Int,
          maxRecordingSeconds: Double, trailingSpace: Bool, microphoneUID: String?,
-         soundCues: Bool, language: String, threads: Int, keepMicWarm: Bool) {
+         soundCues: Bool, language: String, threads: Int, keepMicWarm: Bool,
+         keepModelWarm: Bool? = nil, modelIdleMinutes: Double = 5) {
+        self.model = model
         self.modelPath = modelPath
         self.hold = hold
         self.toggle = toggle
@@ -47,11 +58,14 @@ struct Config: Codable {
         self.language = language
         self.threads = threads
         self.keepMicWarm = keepMicWarm
+        self.keepModelWarm = keepModelWarm
+        self.modelIdleMinutes = modelIdleMinutes
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = Config.defaults
+        model = try c.decodeIfPresent(String.self, forKey: .model) ?? d.model
         modelPath = try c.decodeIfPresent(String.self, forKey: .modelPath) ?? d.modelPath
         hold = try c.decodeIfPresent(KeyBinding.self, forKey: .hold) ?? d.hold
         toggle = try c.decodeIfPresent(KeyBinding.self, forKey: .toggle) ?? d.toggle
@@ -63,6 +77,8 @@ struct Config: Codable {
         language = try c.decodeIfPresent(String.self, forKey: .language) ?? d.language
         threads = try c.decodeIfPresent(Int.self, forKey: .threads) ?? d.threads
         keepMicWarm = try c.decodeIfPresent(Bool.self, forKey: .keepMicWarm) ?? d.keepMicWarm
+        keepModelWarm = try c.decodeIfPresent(Bool.self, forKey: .keepModelWarm)
+        modelIdleMinutes = try c.decodeIfPresent(Double.self, forKey: .modelIdleMinutes) ?? d.modelIdleMinutes
     }
 }
 

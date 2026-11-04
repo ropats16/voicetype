@@ -6,16 +6,18 @@
 #   make build     just compile (release)
 #   make package   assemble dist/VoiceType.app
 #   make install   build, package, and copy to /Applications
-#   make model     download the default model (override: make model MODEL=small.en)
+#   make model     download the model the app auto-picks for this Mac
+#                  (or a specific one: make model MODEL=small.en-q5_1)
 #   make clean     remove build artifacts
 
 APP   := VoiceType
-MODEL ?= medium.en
+# Empty = the model the app auto-picks for this Mac (scripts/model_catalog.sh).
+MODEL ?=
 
 .PHONY: setup embed model build run package install clean
 
 # `make setup` auto-detects the model from this Mac's arch + RAM. Pass MODEL= to
-# override, e.g. `make setup MODEL=small.en` — only a command-line MODEL is
+# override, e.g. `make setup MODEL=small.en-q5_1` — only a command-line MODEL is
 # forwarded, so the plain `make setup` reaches setup.sh with no arg (auto-pick).
 setup:
 ifeq ($(origin MODEL),command line)

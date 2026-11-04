@@ -172,29 +172,10 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertNil(vm.selectedMicUID)
     }
 
-    // MARK: - selectModel
-
-    func testSelectModelSetsPathSuffix() {
-        let vm = makeVM()
-        vm.selectModel("small.en")
-        XCTAssertTrue(configStore.config.modelPath.hasSuffix("ggml-small.en.bin"),
-                      "modelPath must end with the expected filename")
-    }
-
-    func testSelectModelUpdatesSelectedSize() {
-        let vm = makeVM()
-        vm.selectModel("small.en")
-        XCTAssertEqual(vm.selectedModelSize, "small.en")
-    }
-
-    func testSelectModelSetsNeedsRestart() {
-        let vm = makeVM()
-        vm.selectModel("small.en")
-        XCTAssertTrue(vm.modelChangeNeedsRestart)
-    }
+    // MARK: - selectModel (more in SettingsModelTests)
 
     func testSelectModelFiresMenuRefresh() {
-        let vm = makeVM()
+        let vm = makeVM(presentFiles: ["ggml-tiny.en.bin"])
         vm.selectModel("tiny.en")
         XCTAssertGreaterThan(menuRefreshCount, 0, "selectModel must call onNeedsMenuRefresh")
     }

@@ -7,7 +7,7 @@ typed into whatever text field you're in — any browser, any app, the Terminal,
 and the Claude Code CLI. Nothing is ever sent to the internet.
 
 > **Status:** v1. You install it by building it on your own Mac (steps below).
-> A ready-made download and an in-app model picker will come later.
+> A ready-made download and in-app model downloads will come later.
 
 ---
 
@@ -34,35 +34,50 @@ and the Claude Code CLI. Nothing is ever sent to the internet.
 - **Apple Silicon Mac (M1, M2, M3, M4 — any model from 2020 on):** ✅ ideal.
   Metal (GPU) accelerated; the default model transcribes a sentence in about a
   second.
-- **Intel Mac:** ✅ supported. Runs CPU-only (no Metal), so it's slower — setup
-  automatically picks a smaller model to keep it responsive.
+- **Intel Mac:** ✅ supported. Runs CPU-only (no Metal), so it's slower — the
+  app automatically picks a smaller model to keep it responsive.
+- **8 GB Macs (e.g. M1 8 GB):** ✅ first-class — they get a light quantized
+  model, and the model is unloaded when idle to give the RAM back.
 - **macOS 14 (Sonoma) or newer** required.
-- **~2 GB free disk** for the default model.
+- **~1 GB free disk** for the default model.
 
-**Setup auto-detects your chip + RAM and picks a default model for you** — no
-input needed. You can still override it (see
-[Setup step 3](#3-build-it-and-download-the-speech-model) and
-[Changing the model](#changing-the-model-or-hotkey)). What it picks:
+**The app picks a model for your chip + RAM by itself** (and setup downloads
+that one) — no input needed. You can still pick another in **Settings** (it
+switches instantly, no restart) or with `make setup MODEL=…`. What it picks:
 
-| Your Mac      | RAM     | Auto-picked model |
-|---------------|---------|-------------------|
-| Apple Silicon | ≥ 16 GB | `medium.en`       |
-| Apple Silicon | < 16 GB | `small.en`        |
-| Intel         | ≥ 16 GB | `small.en`        |
-| Intel         | 8–16 GB | `base.en`         |
-| Intel         | < 8 GB  | `tiny.en`         |
+| Your Mac      | RAM      | Auto-picked model | Download |
+|---------------|----------|-------------------|----------|
+| Apple Silicon | ≥ 32 GB  | `medium.en-q8_0`  | 823 MB   |
+| Apple Silicon | 16–31 GB | `medium.en-q5_0`  | 539 MB   |
+| Apple Silicon | 8–15 GB  | `small.en-q5_1`   | 190 MB   |
+| Apple Silicon | < 8 GB   | `base.en-q5_1`    | 60 MB    |
+| Intel         | ≥ 16 GB  | `small.en-q5_1`   | 190 MB   |
+| Intel         | 8–15 GB  | `base.en-q5_1`    | 60 MB    |
+| Intel         | < 8 GB   | `tiny.en-q5_1`    | 32 MB    |
+
+If you set a non-English `language`, it picks the multilingual model of the
+same size (e.g. `small-q5_1`). If the picked model isn't downloaded, the app
+uses the best one you do have.
 
 <details>
-<summary>Model sizes & speed (you can change the model later)</summary>
+<summary>All models (you can change the model later)</summary>
 
-| Model       | Disk / RAM   | When to use                                  |
-|-------------|--------------|----------------------------------------------|
-| `tiny.en`   | ~75 MB       | Fastest, least accurate. Good for testing.   |
-| `base.en`   | ~140 MB      | Light, low-RAM Macs.                          |
-| `small.en`  | ~460 MB      | Good balance.                                 |
-| `medium.en` | ~1.5 GB      | **Default on 16 GB+ Apple Silicon.** Most accurate; instant on M-series. |
+Every model comes in **English-only** (`.en`) and **multilingual** (no `.en`)
+versions, each also **quantized** (`-q5_*` smallest, `-q8_0` near-lossless) —
+quantized models use about half the RAM for almost the same accuracy.
 
-On an Apple-Silicon Mac, every model runs faster than real time.
+| Family           | Full     | q8_0    | q5      | When to use                                 |
+|------------------|----------|---------|---------|---------------------------------------------|
+| `tiny`           | 78 MB    | 44 MB   | 32 MB   | Fastest, least accurate. Good for testing.  |
+| `base`           | 148 MB   | 82 MB   | 60 MB   | Light, low-RAM Macs.                         |
+| `small`          | 488 MB   | 264 MB  | 190 MB  | Good balance; the 8 GB default.              |
+| `medium`         | 1.5 GB   | 823 MB  | 539 MB  | Most accurate English; the 16 GB+ default.   |
+| `large-v3-turbo` | 1.6 GB   | 874 MB  | 574 MB  | Multilingual only; best for other languages. |
+
+Ids look like `small.en-q5_1`, `medium-q8_0`, `large-v3-turbo-q5_0` (medium and
+large use `q5_0`, the rest `q5_1`); `large-v3-q5_0` is also available. The full
+list with pinned SHA-256 checksums is in `scripts/model_catalog.sh`. On an
+Apple-Silicon Mac, every model runs faster than real time.
 </details>
 
 ---
@@ -97,12 +112,12 @@ make setup
 ```
 
 This fetches the speech engine, then **auto-detects your chip + RAM and
-downloads the matching model** (see the table above — on a typical Apple Silicon
-Mac that's `medium.en`, **~1.5 GB, which takes a while on the first run**), and
-finally builds and packages the app. Let it finish.
+downloads the matching model** (see the table above — on a 16 GB Apple Silicon
+Mac that's `medium.en-q5_0`, **~540 MB**), checks its SHA-256, and finally
+builds and packages the app. Let it finish.
 
 > Want a specific model instead of the auto-pick? Pass `MODEL=`, e.g.
-> `make setup MODEL=small.en` (or `tiny.en`, `base.en`, `medium.en`).
+> `make setup MODEL=small.en-q5_1` (or `medium.en`, `small` for multilingual, …).
 
 ### 4. Install the app
 
@@ -164,20 +179,36 @@ Settings live in a plain text file you can open from the menu
 ~/Library/Application Support/VoiceType/config.json
 ```
 
-**Switch to a different model.** Your starting model was auto-selected at setup
-from your chip + RAM; to change it, download another and point `config.json` at
-it:
+**Switch to a different model.** By default the app picks one for your chip +
+RAM (**Automatic** in Settings). To use another, download it, then pick it in
+**Settings → Model** — it switches right away, no restart (a dictation already
+being transcribed finishes on the old model):
 
 ```sh
-make model MODEL=small.en      # downloads it
+make model MODEL=small.en-q8_0   # downloads it and checks its checksum
 ```
 
-Then set `"modelPath"` in `config.json` to the new file (same folder, named
-`ggml-small.en.bin`) and relaunch VoiceType.
+Or set `"model": "small.en-q8_0"` in `config.json`. Models you haven't
+downloaded show under **Not downloaded** in Settings with the command to fetch
+them. A file that doesn't match its published SHA-256 (a corrupt or partial
+download) is refused, and the menu says the model failed to load.
 
-> Curious what setup would auto-pick for this Mac? Run
+**Language.** English-only (`.en`) models always transcribe English. With a
+multilingual model, pick the language in Settings (or `"language": "de"`, or
+`"auto"` to detect it each time).
+
+**Keep model loaded.** On by default, except on Macs with 8 GB or less, where
+the model is unloaded after `modelIdleMinutes` (default 5) without a dictation
+and reloaded when you next start one. Toggle it in Settings.
+
+> Curious what the app would auto-pick for this Mac? Run
 > `scripts/detect_hardware.sh` — it reports the detected arch, RAM, and the
-> model it would choose (diagnostic only; it changes nothing).
+> model (diagnostic only; it changes nothing). The app logs its pick at launch.
+
+**Where models live.** `~/Library/Application Support/VoiceType/models/`. To
+relocate everything (config, models), set `VOICETYPE_APP_SUPPORT` to another
+folder — the app (when launched from that shell, e.g. `swift run`) and every
+script honour it the same way, using `$VOICETYPE_APP_SUPPORT/models`.
 
 **Change the hotkey.** The `hold` setting is the trigger. The default is a
 pure-modifier combo (it types no character anywhere):
@@ -217,13 +248,16 @@ logs the problem at startup and the menu shows a **Config issue** warning.
 
 | Setting               | What it does                                        |
 |-----------------------|-----------------------------------------------------|
-| `modelPath`           | Full path to the speech model `.bin` file.          |
+| `model`               | `auto` (default: pick for this Mac) or a model id, e.g. `small.en-q5_1`. |
+| `modelPath`           | A specific model `.bin` file; overrides `model` when set (default empty). |
+| `keepModelWarm`       | Keep the model loaded (`true`) or unload it when idle (`false`). Unset = automatic: unload only on ≤ 8 GB Macs. |
+| `modelIdleMinutes`    | Idle minutes before unloading, when not kept warm (default 5). |
 | `hold`                | The hold-to-talk hotkey (see above).                |
 | `toggle`              | The press-to-start / press-to-stop hotkey.          |
 | `cancelKeyCode`       | Key that cancels a recording (default 53 = Esc).    |
 | `maxRecordingSeconds` | Auto-stop after this many seconds (default 600; `0` = no limit, capped at 30 min). |
 | `trailingSpace`       | Add a space after each dictation (default off).     |
-| `language`            | `en`.                                               |
+| `language`            | `en` (default), another code like `de`, or `auto`. English-only models always use `en`. |
 | `threads`             | CPU threads; `0` = pick automatically.              |
 | `keepMicWarm`         | Keep the mic on from launch (default off: it stays on 30 s after each dictation). |
 
@@ -254,9 +288,13 @@ combo still doesn't fire, try a different one (see *Changing the hotkey*). For
 text. For `toggle`, keep at least one modifier with the key for the same reason.
 
 **“Model missing” in the menu.**
-The model file isn't where `config.json` points. Run `make setup` (or
-`make model MODEL=medium.en`) and confirm `modelPath` matches the downloaded
-file in `~/Library/Application Support/VoiceType/models/`.
+The model the app wants isn't downloaded. The menu names it: run the
+`make model MODEL=…` it shows (or pick a downloaded model in Settings). If you
+set `modelPath`, confirm it points at a real file.
+
+**“Model failed to load.”**
+Usually a corrupt or incomplete download (it failed its checksum). Delete the
+file from the models folder and run `make model MODEL=<name>` again.
 
 **Text doesn't appear after I speak.**
 If no text field is focused, VoiceType copies the transcript to your clipboard

@@ -75,25 +75,49 @@ struct SettingsView: View {
             Section {
                 Picker("Model",
                        selection: Binding(
-                           get: { viewModel.selectedModelSize },
-                           set: { if let size = $0 { viewModel.selectModel(size) } }
+                           get: { viewModel.selectedModelID },
+                           set: { viewModel.selectModel($0) }
                        )) {
-                    ForEach(viewModel.modelEntries, id: \.size) { entry in
-                        if entry.isDownloaded {
-                            Text(entry.size).tag(Optional(entry.size))
-                        } else {
-                            Text("\(entry.size)  —  run: make model MODEL=\(entry.size)")
-                                .foregroundColor(.secondary)
-                                .tag(Optional(entry.size))
+                    Text("Automatic (\(viewModel.recommendedModel.label))").tag(ModelSelection.automatic)
+                    if let custom = viewModel.customModelName {
+                        Text("Custom file: \(custom)").tag(SettingsViewModel.customModelID)
+                    }
+                    ForEach(viewModel.downloadedModels) { model in
+                        Text(model.label).tag(model.id)
+                    }
+                    Section("Not downloaded — run: make model MODEL=<name>") {
+                        ForEach(viewModel.notDownloadedModels) { model in
+                            Text(model.label).tag(model.id).disabled(true)
                         }
                     }
                 }
-                .disabled(viewModel.modelEntries.allSatisfy { !$0.isDownloaded })
 
-                if viewModel.modelChangeNeedsRestart {
-                    Text("Restart VoiceType to load the new model.")
+                Picker("Language",
+                       selection: Binding(
+                           get: { viewModel.isLanguageSelectable ? viewModel.language : "en" },
+                           set: { viewModel.setLanguage($0) }
+                       )) {
+                    ForEach(viewModel.languageOptions, id: \.code) { option in
+                        Text(option.name).tag(option.code)
+                    }
+                }
+                .disabled(!viewModel.isLanguageSelectable)
+
+                Toggle("Keep model loaded",
+                       isOn: Binding(
+                           get: { viewModel.keepModelWarm },
+                           set: { viewModel.setKeepModelWarm($0) }
+                       ))
+                Text(viewModel.keepModelWarm
+                     ? "Fastest dictation; the model stays in memory."
+                     : "Frees memory when idle; the next dictation reloads the model first.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                if let hint = viewModel.modelStatusHint {
+                    Text(hint)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(viewModel.modelStatus == .loading ? .secondary : .red)
                 }
             } header: {
                 Text("Model")

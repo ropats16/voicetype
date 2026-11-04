@@ -29,6 +29,9 @@ final class SettingsViewModel: ObservableObject {
     private let pauseHotkeys: () -> Void
     /// Stored for Task 4b (hotkey capture); not used by this task's UI.
     private let reloadHotkeys: () -> Void
+    private let hardware: HardwareProfile
+    /// Re-resolves the model settings and hands them to the engine (live switch).
+    private let onModelSettingsChange: () -> Void
 
     // MARK: - Published display state
 
@@ -37,9 +40,16 @@ final class SettingsViewModel: ObservableObject {
     @Published private(set) var selectedMicUID: String?     // nil = System Default
     /// The picker selection: the configured max dictation length (0 = no limit).
     @Published private(set) var maxDictationSeconds: Double
-    @Published private(set) var selectedModelSize: String?  // nil if current path unknown
     @Published private(set) var loginError: String?
-    @Published private(set) var modelChangeNeedsRestart: Bool = false
+
+    // MARK: - Model display state
+
+    /// `ModelSelection.automatic`, a catalog id, or `customModelID`.
+    @Published private(set) var selectedModelID: String
+    @Published private(set) var language: String
+    /// The effective keep-warm setting (the automatic default until the user picks).
+    @Published private(set) var keepModelWarm: Bool
+    @Published private(set) var modelStatus: TranscriptionStatus
 
     // MARK: - Hotkey display state (Task 4b)
 
@@ -67,7 +77,10 @@ final class SettingsViewModel: ObservableObject {
          presentModelFilenames: @escaping () -> Set<String>,
          onNeedsMenuRefresh: @escaping () -> Void,
          pauseHotkeys: @escaping () -> Void,
-         reloadHotkeys: @escaping () -> Void) {
+         reloadHotkeys: @escaping () -> Void,
+         hardware: HardwareProfile = .current,
+         modelStatus: TranscriptionStatus = .notLoaded,
+         onModelSettingsChange: @escaping () -> Void = {}) {
         self.configStore = configStore
         self.loginItem = loginItem
         self.availableMics = availableMics
@@ -75,13 +88,20 @@ final class SettingsViewModel: ObservableObject {
         self.onNeedsMenuRefresh = onNeedsMenuRefresh
         self.pauseHotkeys = pauseHotkeys
         self.reloadHotkeys = reloadHotkeys
+        self.hardware = hardware
+        self.onModelSettingsChange = onModelSettingsChange
         // Initialise display state from persisted config + current login-item status.
         let cfg = configStore.config
         self.soundCues = cfg.soundCues
         self.launchAtLogin = loginItem.isEnabled
         self.selectedMicUID = cfg.microphoneUID
         self.maxDictationSeconds = max(0, cfg.maxRecordingSeconds)
-        self.selectedModelSize = ModelCatalog.selectedSize(modelPath: cfg.modelPath)
+        self.selectedModelID = Self.modelID(for: cfg)
+        self.language = cfg.language
+        self.keepModelWarm = ModelSelection.idleUnloadAfter(keepWarm: cfg.keepModelWarm,
+                                                            idleMinutes: cfg.modelIdleMinutes,
+                                                            hardware: hardware) == nil
+        self.modelStatus = modelStatus
         self.holdBinding = cfg.hold
         self.toggleBinding = cfg.toggle
     }
@@ -122,16 +142,41 @@ final class SettingsViewModel: ObservableObject {
         onNeedsMenuRefresh()
     }
 
-    /// Persists the selected model path and marks that a restart is required to
-    /// load it. Triggers a menu rebuild.
-    func selectModel(_ size: String) {
-        let path = Paths.modelsDir
-            .appendingPathComponent(ModelCatalog.filename(for: size))
-            .path
-        configStore.update { $0.modelPath = path }
-        selectedModelSize = size
-        modelChangeNeedsRestart = true
-        onNeedsMenuRefresh()
+    /// Persists the pick (`ModelSelection.automatic` or a downloaded catalog
+    /// id) and switches the engine to it live. A pick of a model that isn't
+    /// downloaded is ignored (downloading is outside the app for now).
+    func selectModel(_ id: String) {
+        guard id != selectedModelID else { return }
+        if id != ModelSelection.automatic {
+            guard let model = ModelCatalog.model(id: id),
+                  presentModelFilenames().contains(model.filename) else { return }
+        }
+        configStore.update {
+            $0.model = id
+            $0.modelPath = ""   // a pick replaces any hand-set file
+        }
+        selectedModelID = id
+        modelSettingsChanged()
+    }
+
+    /// Persists the decode language ("auto" or an ISO code); only multilingual
+    /// models use it.
+    func setLanguage(_ code: String) {
+        configStore.update { $0.language = code }
+        language = code
+        modelSettingsChanged()
+    }
+
+    /// Persists an explicit keep-warm choice (overriding the automatic default).
+    func setKeepModelWarm(_ on: Bool) {
+        configStore.update { $0.keepModelWarm = on }
+        keepModelWarm = on
+        modelSettingsChanged()
+    }
+
+    /// Called (on main) with each engine status, so the section can show it.
+    func modelStatusChanged(_ status: TranscriptionStatus) {
+        modelStatus = status
     }
 
     // MARK: - Computed properties for the View
@@ -153,8 +198,63 @@ final class SettingsViewModel: ObservableObject {
     /// All currently available audio input devices (re-queried each access).
     var micOptions: [AudioInputDevice] { availableMics() }
 
-    /// Full model catalog with download status (re-queried each access).
-    var modelEntries: [ModelCatalogEntry] { ModelCatalog.entries(presentFilenames: presentModelFilenames()) }
+    /// The `selectedModelID` of a hand-set `modelPath` outside the catalog.
+    static let customModelID = "custom"
+
+    /// What Automatic picks on this Mac (for the current language).
+    var recommendedModel: WhisperModel {
+        ModelCatalog.recommended(for: hardware, language: configStore.config.language)
+    }
+
+    /// Catalog models in the models folder (re-queried each access).
+    var downloadedModels: [WhisperModel] {
+        let present = presentModelFilenames()
+        return ModelCatalog.models.filter { present.contains($0.filename) }
+    }
+
+    /// Catalog models not yet downloaded, shown with the command that fetches them.
+    var notDownloadedModels: [WhisperModel] {
+        let present = presentModelFilenames()
+        return ModelCatalog.models.filter { !present.contains($0.filename) }
+    }
+
+    /// The file name of a hand-set `modelPath` outside the catalog, if any.
+    var customModelName: String? {
+        selectedModelID == Self.customModelID
+            ? URL(fileURLWithPath: configStore.config.modelPath).lastPathComponent : nil
+    }
+
+    /// What the engine runs for the current settings.
+    private var resolvedModel: ModelSpec {
+        ModelSelection.resolve(configStore.config, hardware: hardware, presentFilenames: presentModelFilenames())
+    }
+
+    /// False for English-only models, which always decode English.
+    var isLanguageSelectable: Bool { !isEnglishOnly(resolvedModel) }
+
+    /// The languages offered for multilingual models ("auto" = detect), plus a
+    /// hand-set code from `config.json` so the picker always shows the truth.
+    var languageOptions: [(code: String, name: String)] {
+        let common: [(code: String, name: String)] = [
+            ("auto", "Auto-detect"), ("en", "English"), ("es", "Spanish"), ("fr", "French"),
+            ("de", "German"), ("it", "Italian"), ("pt", "Portuguese"), ("nl", "Dutch"),
+            ("pl", "Polish"), ("ru", "Russian"), ("uk", "Ukrainian"), ("tr", "Turkish"),
+            ("ar", "Arabic"), ("hi", "Hindi"), ("ja", "Japanese"), ("ko", "Korean"), ("zh", "Chinese"),
+        ]
+        return common.contains { $0.code == language } ? common : common + [(language, language)]
+    }
+
+    /// A one-line explanation of a model problem (or load in progress), else nil.
+    var modelStatusHint: String? {
+        switch modelStatus {
+        case .missing:
+            let name = ModelCatalog.model(forFile: resolvedModel.path)?.id
+            return name.map { "Not downloaded. Run: make model MODEL=\($0)" } ?? "Model file not found."
+        case .failed(let reason): return "Failed to load: \(reason)"
+        case .loading: return "Loading model…"
+        case .notLoaded, .ready: return nil
+        }
+    }
 
     /// Human-readable label for the current hold binding (e.g. "⌃⇧").
     var holdDescription: String   { holdBinding.description }
@@ -226,6 +326,21 @@ final class SettingsViewModel: ObservableObject {
     }
 
     // MARK: - Private helpers
+
+    private func modelSettingsChanged() {
+        onModelSettingsChange()
+        onNeedsMenuRefresh()
+    }
+
+    private static func modelID(for config: Config) -> String {
+        guard !config.modelPath.isEmpty else { return config.model.isEmpty ? ModelSelection.automatic : config.model }
+        return ModelCatalog.model(forFile: config.modelPath)?.id ?? customModelID
+    }
+
+    private func isEnglishOnly(_ spec: ModelSpec) -> Bool {
+        ModelCatalog.model(forFile: spec.path)?.isEnglishOnly
+            ?? URL(fileURLWithPath: spec.path).lastPathComponent.contains(".en")
+    }
 
     /// Surfaces the first hold/toggle config issue as a user-visible warning.
     private func updateHotkeyWarning() {

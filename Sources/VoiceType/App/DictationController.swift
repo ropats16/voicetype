@@ -67,6 +67,8 @@ final class DictationController {
     func startRecording() {
         // The hold hotkey can fire repeatedly while held; only the first starts.
         guard !isBusy, !capture.isRecording else { return }
+        // If the model was unloaded for idleness, reload it while the user talks.
+        engine.prewarm()
         // Returns at once, so the indicator shows while a cold mic starts.
         capture.begin { [weak self] error in
             if let error { self?.recordingFailedToStart(error) }

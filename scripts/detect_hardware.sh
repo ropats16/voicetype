@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
-# Detect this Mac's architecture, chip, and RAM, then recommend a default
-# Whisper model and whether the Metal (GPU) build path applies. Consumed by
+# Detect this Mac's architecture, chip, and RAM, then report the Whisper model
+# the app auto-picks and whether the Metal (GPU) build path applies. The app
+# makes the real choice at launch (ModelCatalog.recommended); this mirrors it
+# via scripts/model_catalog.sh so setup downloads the same model. Consumed by
 # scripts/setup.sh; also runnable standalone for diagnostics.
 #
 # Usage:
 #   scripts/detect_hardware.sh            eval-safe KEY=value report on stdout
 #                                         (ARCH, CHIP, MEM_GB, MODEL, METAL);
 #                                         human narration goes to stderr.
-#   scripts/detect_hardware.sh --model    print only the model (e.g. medium.en)
+#   scripts/detect_hardware.sh --model    print only the model (e.g. small.en-q5_1)
 #   scripts/detect_hardware.sh --metal    print only 1 (Metal) or 0 (CPU-only)
 #   scripts/detect_hardware.sh --arch     print only the arch (arm64 / x86_64)
 #
-# Model auto-pick (arch x whole-GiB RAM):
-#   arm64  & >=16      -> medium.en     x86_64 & >=16          -> small.en
-#   arm64  &  <16      -> small.en      x86_64 & >=8 and <16   -> base.en
-#                                       x86_64 &  <8           -> tiny.en
+# Model auto-pick (arch x whole-GiB RAM; table in scripts/model_catalog.sh):
+#   arm64  &  <8   -> base.en-q5_1      x86_64 &  <8   -> tiny.en-q5_1
+#   arm64  & 8-15  -> small.en-q5_1     x86_64 & 8-15  -> base.en-q5_1
+#   arm64  & 16-31 -> medium.en-q5_0    x86_64 & >=16  -> small.en-q5_1
+#   arm64  & >=32  -> medium.en-q8_0
 #   Metal: arm64 -> 1, x86_64 -> 0
 #
 # Testability overrides (used instead of the live read when set), so the truth
@@ -24,11 +27,14 @@
 #   DETECT_CHIP        overrides `sysctl -n machdep.cpu.brand_string`
 set -euo pipefail
 
+# shellcheck source=model_catalog.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/model_catalog.sh"
+
 usage() {
   cat <<'EOF'
 Usage: detect_hardware.sh [--model | --metal | --arch]
   (no args)  eval-safe KEY=value report (ARCH CHIP MEM_GB MODEL METAL) on stdout
-  --model    print the recommended Whisper model (e.g. medium.en)
+  --model    print the recommended Whisper model (e.g. small.en-q5_1)
   --metal    print 1 (Metal / Apple Silicon) or 0 (CPU-only / Intel)
   --arch     print the CPU architecture (arm64 or x86_64)
 EOF
@@ -101,22 +107,7 @@ metal_for_arch() {
 }
 
 model_for() {
-  local arch=$1 gib=$2
-  case "$arch" in
-    arm64)
-      if (( gib >= 16 )); then printf 'medium.en'; else printf 'small.en'; fi
-      ;;
-    x86_64)
-      if   (( gib >= 16 )); then printf 'small.en'
-      elif (( gib >= 8 ));  then printf 'base.en'
-      else                       printf 'tiny.en'
-      fi
-      ;;
-    *)
-      echo "error: unsupported architecture '$arch' (expected arm64 or x86_64)." >&2
-      return 1
-      ;;
-  esac
+  recommended_model "$1" "$2"
 }
 
 report() {

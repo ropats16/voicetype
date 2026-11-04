@@ -13,6 +13,15 @@ extension TranscriptionEngine {
     static func whisperAdapter(language: String, threads: Int) -> (String) throws -> TranscriptionAdapter {
         { path in try WhisperAdapter(modelPath: path, language: language, threads: threads) }
     }
+
+    /// The app's engine for a resolved model: checksum-verified, switchable
+    /// with `switchModel(to:)`, and unloaded after `idleUnloadAfter` idle
+    /// seconds (nil = keep it loaded).
+    static func whisper(model: ModelSpec, threads: Int, idleUnloadAfter: TimeInterval? = nil) -> TranscriptionEngine {
+        TranscriptionEngine(model: model, idleUnloadAfter: idleUnloadAfter) { spec in
+            try WhisperAdapter(modelPath: spec.path, language: spec.language, threads: threads)
+        }
+    }
 }
 
 /// Swift wrapper over the whisper.cpp C API, Metal-accelerated.

@@ -10,10 +10,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var hotkeys: HotkeyManager?
     private var dictation: DictationController?
+    /// The model comes from the config (explicit pick, else auto-picked for
+    /// this Mac); Settings changes are applied live by `applyModelSettings()`.
     private lazy var engine: TranscriptionEngine = .whisper(
-        modelPath: configStore.config.modelPath,
-        language: configStore.config.language,
-        threads: configStore.config.threads
+        model: resolvedModel(),
+        threads: configStore.config.threads,
+        idleUnloadAfter: idleUnloadAfter()
     )
     /// Mic capture. The mic and max duration are read live, so a Settings change
     /// applies to the next recording.
@@ -23,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         maxSeconds: { [configStore] in configStore.config.maxRecordingSeconds }
     )
     private var settingsWindowController: SettingsWindowController?
+    private weak var settingsViewModel: SettingsViewModel?
 
     private var readinessTimer: Timer?
     private var isMicWarm = false
@@ -135,7 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Disabled menu line telling the user how to fix a model problem, if any.
     private var engineFixHint: String? {
         switch engine.status {
-        case .missing: return "Model missing — run `make setup`"
+        case .missing: return "Model missing — run `make model MODEL=\(modelName)`"
         case .failed: return "Model failed to load — see log"
         case .notLoaded, .loading, .ready: return nil
         }
@@ -197,24 +200,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startEngine() {
         engine.onStatusChange = { [weak self] status in self?.engineStatusChanged(status) }
+        Log.info("Model: \(engine.model.path) (language \(engine.model.language)); auto-pick for this Mac: \(ModelCatalog.recommended(for: .current).id).")
         engine.load()
+    }
+
+    private func resolvedModel() -> ModelSpec {
+        ModelSelection.resolve(configStore.config, presentFilenames: ModelSelection.presentFilenames())
+    }
+
+    private func idleUnloadAfter() -> TimeInterval? {
+        ModelSelection.idleUnloadAfter(keepWarm: configStore.config.keepModelWarm,
+                                       idleMinutes: configStore.config.modelIdleMinutes,
+                                       hardware: .current)
+    }
+
+    /// Settings changed the model, language or keep-warm: switch live. Jobs
+    /// already submitted finish on the current model.
+    private func applyModelSettings() {
+        engine.setIdleUnload(after: idleUnloadAfter())
+        engine.switchModel(to: resolvedModel())
+    }
+
+    /// The catalog id of the engine's model, else its file name (for hints).
+    private var modelName: String {
+        ModelCatalog.model(forFile: engine.model.path)?.id ?? URL(fileURLWithPath: engine.model.path).lastPathComponent
     }
 
     /// Called on main with each status the engine reports.
     private func engineStatusChanged(_ status: TranscriptionStatus) {
-        let path = configStore.config.modelPath
+        MainActor.assumeIsolated { settingsViewModel?.modelStatusChanged(status) }
+        let path = engine.model.path
         switch status {
         case .missing:
-            Log.error("Model not found at \(path). Run `make setup`.")
+            Log.error("Model not found at \(path). Run `make model MODEL=\(modelName)`.")
             Notifier.notify(
                 title: "VoiceType: model not found",
-                body: "Model file not found at \(path). Run `make setup` to download it."
+                body: "Model file not found at \(path). Run `make model MODEL=\(modelName)` to download it."
             )
         case .failed(let reason):
             Log.error("Model load failed: \(reason)")
             Notifier.notify(
                 title: "VoiceType: model failed to load",
-                body: "\(reason) Try `make setup` or `make model MODEL=<name>` to re-download it."
+                body: "\(reason) Try `make model MODEL=\(modelName)` to re-download it."
             )
         case .ready:
             Log.info("Transcription model loaded.")
@@ -306,8 +333,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     },
                     onNeedsMenuRefresh: { [weak self] in self?.rebuildMenu() },
                     pauseHotkeys: { [weak self] in self?.pauseHotkeys() },
-                    reloadHotkeys: { [weak self] in self?.reloadHotkeys() }
+                    reloadHotkeys: { [weak self] in self?.reloadHotkeys() },
+                    modelStatus: engine.status,
+                    onModelSettingsChange: { [weak self] in self?.applyModelSettings() }
                 )
+                settingsViewModel = vm
                 settingsWindowController = SettingsWindowController(viewModel: vm)
             }
             settingsWindowController?.show()
