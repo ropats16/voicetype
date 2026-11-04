@@ -21,10 +21,11 @@ enum SelfTest {
             err("Loaded \(samples.count) samples (\(String(format: "%.1f", seconds))s @ 16 kHz)")
 
             err("Loading model: \(model)")
-            let engine = TranscriptionEngine.whisper(modelPath: model, language: "en", threads: 0)
+            // Verified against its pinned checksum if the catalog knows the file.
+            let engine = TranscriptionEngine.whisper(model: .file(model), threads: 0)
             let loadStart = Date()
             engine.load()
-            while engine.status == .loading { Thread.sleep(forTimeInterval: 0.01) }
+            while [.loading, .verifying].contains(engine.status) { Thread.sleep(forTimeInterval: 0.01) }
             switch engine.status {
             case .ready:
                 err("Model loaded and warmed up in \(String(format: "%.2f", Date().timeIntervalSince(loadStart)))s")
@@ -34,7 +35,7 @@ enum SelfTest {
             case .failed(let reason):
                 err("selftest failed: \(reason)")
                 return 1
-            case .notLoaded, .loading:
+            case .notLoaded, .loading, .verifying:
                 break   // unreachable: load() was called and the loop above waits it out
             }
 

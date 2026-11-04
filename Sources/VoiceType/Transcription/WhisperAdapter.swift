@@ -3,24 +3,16 @@ import CWhisper
 
 extension TranscriptionEngine {
     /// The app's engine: whisper.cpp (Metal-accelerated) behind the engine's
-    /// load, warm-up and job queue.
-    static func whisper(modelPath: String, language: String, threads: Int) -> TranscriptionEngine {
-        TranscriptionEngine(modelPath: modelPath, makeAdapter: whisperAdapter(language: language, threads: threads))
-    }
-
-    /// The adapter factory `whisper(...)` uses, for callers (the bench) that
-    /// build their own engine around it.
-    static func whisperAdapter(language: String, threads: Int) -> (String) throws -> TranscriptionAdapter {
-        { path in try WhisperAdapter(modelPath: path, language: language, threads: threads) }
-    }
-
-    /// The app's engine for a resolved model: checksum-verified, switchable
-    /// with `switchModel(to:)`, and unloaded after `idleUnloadAfter` idle
-    /// seconds (nil = keep it loaded).
+    /// checksum check, load, warm-up, job queue and live model switching; the
+    /// model is unloaded after `idleUnloadAfter` idle seconds (nil = keep it).
     static func whisper(model: ModelSpec, threads: Int, idleUnloadAfter: TimeInterval? = nil) -> TranscriptionEngine {
-        TranscriptionEngine(model: model, idleUnloadAfter: idleUnloadAfter) { spec in
-            try WhisperAdapter(modelPath: spec.path, language: spec.language, threads: threads)
-        }
+        TranscriptionEngine(model: model, idleUnloadAfter: idleUnloadAfter, makeAdapter: whisperAdapter(threads: threads))
+    }
+
+    /// The adapter factory `whisper(...)` uses (file and language come from
+    /// the spec), for callers (the bench) that build their own engine around it.
+    static func whisperAdapter(threads: Int) -> (ModelSpec) throws -> TranscriptionAdapter {
+        { spec in try WhisperAdapter(modelPath: spec.path, language: spec.language, threads: threads) }
     }
 }
 

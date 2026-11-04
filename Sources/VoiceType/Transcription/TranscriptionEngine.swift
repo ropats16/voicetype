@@ -7,6 +7,9 @@ enum TranscriptionStatus: Equatable {
     /// `load()` hasn't been called yet.
     case notLoaded
     case missing
+    /// Hashing a model file not checked before (first use; seconds for a
+    /// large model). The current model, if any, still takes jobs meanwhile.
+    case verifying
     case loading
     case ready
     case failed(reason: String)
@@ -48,11 +51,12 @@ struct Transcript: Equatable {
 
 /// What the engine loads: a model file, the SHA-256 it must match (nil = an
 /// unverified custom file), and the language to decode. Build one from the
-/// user's settings with `ModelSelection.resolve`.
+/// user's settings with `ModelSelection.resolve`, or for one file with
+/// `ModelSpec.file(_:language:)`.
 struct ModelSpec: Equatable {
     var path: String
     var sha256: String?
-    /// An ISO code ("en", "de", …) or "auto" to detect per job.
+    /// An ISO code ("en", "de", …) or `ModelSpec.autoDetect`.
     var language: String
 }
 
@@ -65,8 +69,8 @@ struct ModelSpec: Equatable {
 ///
 /// Everything that touches the model runs on one serial queue, in order. That
 /// one rule gives the switching guarantees: a job submitted before
-/// `switchModel(to:)` finishes on the old model, the switch then frees it and
-/// loads the new one, and later jobs wait for that load.
+/// `switchModel(to:)` finishes on the old model, the switch then replaces it,
+/// and later jobs wait for that.
 ///
 /// `@unchecked Sendable`: the adapter and the `queue`-only state are touched
 /// only on `queue`, the rest only under `lock`, and `onStatusChange` is set
@@ -85,6 +89,9 @@ final class TranscriptionEngine: @unchecked Sendable {
     private var loadedSpec: ModelSpec?
     /// Set while the model is unloaded for idleness: what the next job reloads.
     private var idleSpec: ModelSpec?
+    /// Set by `prewarm()` until the next job (or `endPrewarm()`): a recording
+    /// is under way, so the model must not be unloaded however long it runs.
+    private var isHeld = false
     /// Bumped by every job and load; an idle timer only fires if it's unchanged.
     private var activity = 0
 
@@ -93,23 +100,15 @@ final class TranscriptionEngine: @unchecked Sendable {
     private var _status: TranscriptionStatus = .notLoaded
     private var _model: ModelSpec
     private var _idleUnloadAfter: TimeInterval?
-    private var _isModelLoaded = false
-    private var _pendingJobCount = 0
     private var hasStarted = false
 
     /// Current status; safe to read from any thread. Stays `.ready` while the
     /// model is unloaded for idleness, since the next job reloads it.
     var status: TranscriptionStatus { lock.withLock { _status } }
 
-    /// The model the engine runs (or is switching to).
+    /// The model in use (or being switched to). After a failed switch it is
+    /// the previous model again, which the engine went back to.
     var model: ModelSpec { lock.withLock { _model } }
-
-    /// Whether the model is in memory right now (false before a load and
-    /// while unloaded for idleness).
-    var isModelLoaded: Bool { lock.withLock { _isModelLoaded } }
-
-    /// Jobs submitted and not yet finished, including the running one.
-    var pendingJobCount: Int { lock.withLock { _pendingJobCount } }
 
     /// Called on the main thread with each status change the engine reports,
     /// including `.missing` when `load()` finds no model file. Set it before
@@ -127,14 +126,9 @@ final class TranscriptionEngine: @unchecked Sendable {
         self.makeAdapter = makeAdapter
     }
 
-    /// A fixed, unverified model file, kept loaded.
-    convenience init(modelPath: String, makeAdapter: @escaping (String) throws -> TranscriptionAdapter) {
-        self.init(model: ModelSpec(path: modelPath, sha256: nil, language: "en"),
-                  makeAdapter: { try makeAdapter($0.path) })
-    }
-
     /// Starts loading the model in the background. Status becomes `.missing`
-    /// right away if there's no model file, otherwise `.loading` until the load
+    /// right away if there's no model file, otherwise `.loading` (with
+    /// `.verifying` while a not-yet-checked file is hashed) until the load
     /// settles as `.ready` (after the warm-up) or `.failed` (including a
     /// checksum mismatch, in which case the file is never loaded). Call once.
     func load() {
@@ -148,14 +142,16 @@ final class TranscriptionEngine: @unchecked Sendable {
     }
 
     /// Switches to another model (or language) without a restart. Jobs already
-    /// submitted finish on the current model; the switch then frees it and
-    /// loads `spec` (status `.loading`, then `.ready`, `.missing` or
-    /// `.failed`), and jobs submitted from now on run on the new one. A no-op
-    /// if `spec` is already loaded; re-selecting a model that failed retries
-    /// it. Before `load()`, it just changes what `load()` will load.
+    /// submitted finish on the current model; then the new file is checked
+    /// (present, checksum) before the current model is let go, and loaded in
+    /// its place. Jobs submitted from now on run on the new one. If the switch
+    /// fails, the engine reports `.failed` and goes back to the previous model
+    /// (`.ready` again, `model` = the previous one). A no-op if `spec` is
+    /// already in use; re-selecting a model that failed retries it. Before
+    /// `load()`, it just changes what `load()` will load.
     func switchModel(to spec: ModelSpec) {
         let reload = lock.withLock { () -> Bool in
-            let settled = _status == .ready || _status == .loading
+            let settled = _status == .ready || _status == .loading || _status == .verifying
             guard spec != _model || !settled else { return false }
             _model = spec
             return hasStarted
@@ -178,11 +174,22 @@ final class TranscriptionEngine: @unchecked Sendable {
         }
     }
 
-    /// A job is likely soon (e.g. recording started): reload an idle-unloaded
-    /// model now so it's ready when the audio arrives. Cheap when loaded.
+    /// A job is coming (a recording started): reload an idle-unloaded model now
+    /// so it's ready when the audio arrives, and keep it loaded — however long
+    /// the recording runs — until the next job is submitted or `endPrewarm()`.
     func prewarm() {
         queue.async { [self] in
             reloadIfIdle(warmUp: true)
+            isHeld = true
+            noteActivity()
+        }
+    }
+
+    /// The job `prewarm()` expected isn't coming (recording cancelled or
+    /// discarded): the idle clock runs again.
+    func endPrewarm() {
+        queue.async { [self] in
+            isHeld = false
             noteActivity()
         }
     }
@@ -195,44 +202,82 @@ final class TranscriptionEngine: @unchecked Sendable {
     /// called) it throws `TranscriptionError.modelNotLoaded`.
     func transcribe(_ samples: [Float]) async throws -> Transcript {
         try await withCheckedThrowingContinuation { continuation in
-            lock.withLock { _pendingJobCount += 1 }
-            queue.async { [self] in
-                reloadIfIdle(warmUp: false)   // the job itself pays the first-run costs
-                let result: Result<Transcript, Error>
-                if let adapter {
-                    result = Result { Transcript(segments: try adapter.transcribe(samples: samples)) }
-                } else {
-                    result = .failure(TranscriptionError.modelNotLoaded)
-                }
-                lock.withLock { _pendingJobCount -= 1 }
-                noteActivity()
-                continuation.resume(with: result)
+            transcribe(samples) { continuation.resume(with: $0) }
+        }
+    }
+
+    /// `transcribe(_:)` for callers that need the job queued before this call
+    /// returns. `completion` runs on the engine's queue.
+    func transcribe(_ samples: [Float], completion: @escaping (Result<Transcript, Error>) -> Void) {
+        queue.async { [self] in
+            reloadIfIdle(warmUp: false)   // the job itself pays the first-run costs
+            let result: Result<Transcript, Error>
+            if let adapter {
+                result = Result { Transcript(segments: try adapter.transcribe(samples: samples)) }
+            } else {
+                result = .failure(TranscriptionError.modelNotLoaded)
             }
+            isHeld = false
+            noteActivity()
+            completion(result)
         }
     }
 
     // MARK: - Model lifecycle (on `queue`)
 
-    /// Frees the current model, then verifies, loads and warms up `spec`.
+    /// Loads `spec` in place of the current model. The checks that don't need
+    /// the RAM (file present, checksum) run first, so a bad pick never costs
+    /// the working model; if the load itself fails, the previous model is
+    /// loaded again.
     private func load(_ spec: ModelSpec) {
-        unload()
+        let previous = loadedSpec ?? idleSpec
+        defer { noteActivity() }
         guard FileManager.default.fileExists(atPath: spec.path) else {
-            setStatus(.missing)
-            return
+            return failSwitch(to: spec, .missing, previous: previous, why: "file not found")
         }
-        setStatus(.loading)
         do {
-            let loaded = try open(spec)
+            if let expected = spec.sha256 {
+                try verifier.verify(path: spec.path, sha256: expected) { setStatus(.verifying) }
+            }
+        } catch {
+            return failSwitch(to: spec, .failed(reason: error.localizedDescription),
+                              previous: previous, why: error.localizedDescription)
+        }
+
+        setStatus(.loading)
+        unload()   // free the old model's RAM before the new one claims it
+        do {
+            let loaded = try makeAdapter(spec)
             warmUp(loaded)
-            resident(loaded, spec)
+            install(loaded, from: spec)
             setStatus(.ready)
         } catch {
-            setStatus(.failed(reason: error.localizedDescription))
+            failSwitch(to: spec, .failed(reason: error.localizedDescription),
+                       previous: previous, why: error.localizedDescription)
         }
-        noteActivity()
     }
 
-    /// The checksum gate: a file that doesn't match is never handed to the adapter.
+    /// A load of `spec` failed. With no model to go back to, report `status`.
+    /// Otherwise report the failure, go back to `previous` (still in memory if
+    /// it wasn't let go yet) and report `.ready`.
+    private func failSwitch(to spec: ModelSpec, _ status: TranscriptionStatus, previous: ModelSpec?, why: String) {
+        guard let previous else { return setStatus(status) }
+        let name = { (s: ModelSpec) in URL(fileURLWithPath: s.path).lastPathComponent }
+        setStatus(.failed(reason: "Couldn't switch to \(name(spec)) (\(why)). Still using \(name(previous))."))
+        lock.withLock { _model = previous }
+        if adapter == nil && idleSpec == nil {
+            do {
+                let restored = try open(previous)
+                warmUp(restored)
+                install(restored, from: previous)
+            } catch {
+                return setStatus(.failed(reason: error.localizedDescription))
+            }
+        }
+        setStatus(.ready)
+    }
+
+    /// Verify (silently — a file already checked hits the cache) and load.
     private func open(_ spec: ModelSpec) throws -> TranscriptionAdapter {
         if let expected = spec.sha256 {
             try verifier.verify(path: spec.path, sha256: expected)
@@ -240,18 +285,16 @@ final class TranscriptionEngine: @unchecked Sendable {
         return try makeAdapter(spec)
     }
 
-    private func resident(_ loaded: TranscriptionAdapter, _ spec: ModelSpec) {
+    private func install(_ loaded: TranscriptionAdapter, from spec: ModelSpec) {
         adapter = loaded
         loadedSpec = spec
         idleSpec = nil
-        lock.withLock { _isModelLoaded = true }
     }
 
     private func unload() {
         adapter = nil
         loadedSpec = nil
         idleSpec = nil
-        lock.withLock { _isModelLoaded = false }
     }
 
     /// Reloads a model unloaded for idleness. Status stays `.ready` unless the
@@ -263,7 +306,7 @@ final class TranscriptionEngine: @unchecked Sendable {
         do {
             let loaded = try open(spec)
             if shouldWarmUp { warmUp(loaded) }
-            resident(loaded, spec)
+            install(loaded, from: spec)
             Log.info("Reloaded the idle model in \(String(format: "%.2f", Date().timeIntervalSince(start)))s.")
         } catch {
             setStatus(.failed(reason: error.localizedDescription))
@@ -271,13 +314,14 @@ final class TranscriptionEngine: @unchecked Sendable {
     }
 
     /// Marks activity and, if idle unload is on, schedules an unload for when
-    /// this turns out to be the last activity for the idle period.
+    /// this turns out to be the last activity for the idle period. Never while
+    /// a recording holds the model.
     private func noteActivity() {
         activity &+= 1
         guard let delay = lock.withLock({ _idleUnloadAfter }) else { return }
         let mark = activity
         queue.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, self.activity == mark, self.adapter != nil,
+            guard let self, self.activity == mark, !self.isHeld, self.adapter != nil,
                   self.lock.withLock({ self._idleUnloadAfter }) != nil else { return }
             let spec = self.loadedSpec
             self.unload()

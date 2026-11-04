@@ -1,7 +1,7 @@
 import Foundation
 
 /// A speech engine the bench can run: an id for the report and the same
-/// model-path → adapter factory `TranscriptionEngine` takes.
+/// model → adapter factory `TranscriptionEngine` takes.
 struct BenchEngine {
     /// The engine settings the app takes from `Config`.
     struct Options: Equatable {
@@ -11,15 +11,14 @@ struct BenchEngine {
     }
 
     let id: String
-    let makeAdapter: (String) throws -> TranscriptionAdapter
+    let makeAdapter: (ModelSpec) throws -> TranscriptionAdapter
 
     /// Every engine `--bench --engine <id>` accepts, built with the app's own
     /// factories. To bench a new adapter, add one line here.
     static func all(_ options: Options) -> [BenchEngine] {
         [
             BenchEngine(id: "whisper",
-                        makeAdapter: TranscriptionEngine.whisperAdapter(language: options.language,
-                                                                        threads: options.threads)),
+                        makeAdapter: TranscriptionEngine.whisperAdapter(threads: options.threads)),
         ]
     }
 
@@ -66,7 +65,8 @@ enum BenchError: LocalizedError {
 /// the process's memory footprint throughout.
 struct BenchRunner {
     let engine: BenchEngine
-    let modelPath: String
+    /// The model file and language (`ModelSpec.file(_:language:)`).
+    let model: ModelSpec
     /// Passes over the short clips (≥ 1); more runs steady the percentiles.
     var shortRuns: Int
 
@@ -77,9 +77,13 @@ struct BenchRunner {
     /// How often memory is sampled while jobs run (it's also sampled between them).
     var memorySampleInterval: TimeInterval = 0.005
 
-    init(engine: BenchEngine, modelPath: String, shortRuns: Int) {
+    /// Checks a catalog model's checksum before the timed load, so a first
+    /// run's hashing doesn't count as load time.
+    var verifier: ModelVerifier = .shared
+
+    init(engine: BenchEngine, model: ModelSpec, shortRuns: Int) {
         self.engine = engine
-        self.modelPath = modelPath
+        self.model = model
         self.shortRuns = shortRuns
     }
 
@@ -92,9 +96,14 @@ struct BenchRunner {
         // Wrap the factory and adapter so the bench sees exactly what the
         // engine does: how long the factory took, and when its warm-up ran.
         let timing = LoadTiming()
-        let transcriptionEngine = TranscriptionEngine(modelPath: modelPath) { [clock, make = engine.makeAdapter] path in
+        if let expected = model.sha256, FileManager.default.fileExists(atPath: model.path) {
+            do { try verifier.verify(path: model.path, sha256: expected) } catch {
+                throw BenchError.loadFailed(reason: error.localizedDescription)
+            }
+        }
+        let transcriptionEngine = TranscriptionEngine(model: model, verifier: verifier) { [clock, make = engine.makeAdapter] spec in
             let start = clock()
-            let inner = try make(path)
+            let inner = try make(spec)
             let adapter = TimedAdapter(inner, clock: clock)
             timing.set(adapterSeconds: clock() - start, adapter: adapter)
             return adapter
@@ -102,12 +111,12 @@ struct BenchRunner {
 
         let loadStart = clock()
         transcriptionEngine.load()
-        while transcriptionEngine.status == .loading { try await Task.sleep(nanoseconds: 1_000_000) }
+        while [.loading, .verifying].contains(transcriptionEngine.status) { try await Task.sleep(nanoseconds: 1_000_000) }
         switch transcriptionEngine.status {
         case .ready: break
-        case .missing: throw BenchError.modelMissing(path: modelPath)
+        case .missing: throw BenchError.modelMissing(path: model.path)
         case .failed(let reason): throw BenchError.loadFailed(reason: reason)
-        case .notLoaded, .loading: throw BenchError.loadFailed(reason: "\(engine.id) never finished loading")
+        case .notLoaded, .loading, .verifying: throw BenchError.loadFailed(reason: "\(engine.id) never finished loading")
         }
         // The warm-up is the adapter's first call; the engine reports ready
         // right after it, so the load ends when it does (not when we polled).

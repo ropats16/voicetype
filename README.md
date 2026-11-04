@@ -190,16 +190,21 @@ make model MODEL=small.en-q8_0   # downloads it and checks its checksum
 
 Or set `"model": "small.en-q8_0"` in `config.json`. Models you haven't
 downloaded show under **Not downloaded** in Settings with the command to fetch
-them. A file that doesn't match its published SHA-256 (a corrupt or partial
-download) is refused, and the menu says the model failed to load.
+them. Downloads land in a `.part` file and only get their real name once
+complete and checksum-verified. A file that doesn't match its published SHA-256
+is refused; the first use of a new file shows **Verifying…** while it's hashed
+(once — the result is cached). If a switch fails, VoiceType keeps (or goes back
+to) the model it was using and Settings says why.
 
 **Language.** English-only (`.en`) models always transcribe English. With a
 multilingual model, pick the language in Settings (or `"language": "de"`, or
 `"auto"` to detect it each time).
 
-**Keep model loaded.** On by default, except on Macs with 8 GB or less, where
-the model is unloaded after `modelIdleMinutes` (default 5) without a dictation
-and reloaded when you next start one. Toggle it in Settings.
+**Keep model loaded.** Automatic by default: kept loaded, except on Macs with
+8 GB or less, where the model is unloaded after `modelIdleMinutes` (default 5)
+without a dictation and reloaded as soon as you start the next recording (it is
+never unloaded mid-recording). Settings offers Automatic / Keep loaded /
+Unload when idle.
 
 > Curious what the app would auto-pick for this Mac? Run
 > `scripts/detect_hardware.sh` — it reports the detected arch, RAM, and the

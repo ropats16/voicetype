@@ -60,6 +60,7 @@ final class DictationController {
         cancelMaxDurationTimer()
         guard capture.isRecording else { return }   // nothing to cancel
         capture.cancel()         // discards samples
+        engine.endPrewarm()
         indicator.dismiss()
         Log.info("Recording cancelled.")
     }
@@ -67,7 +68,8 @@ final class DictationController {
     func startRecording() {
         // The hold hotkey can fire repeatedly while held; only the first starts.
         guard !isBusy, !capture.isRecording else { return }
-        // If the model was unloaded for idleness, reload it while the user talks.
+        // Reload an idle-unloaded model while the user talks, and keep it
+        // loaded for the whole recording (until the job or `endPrewarm()`).
         engine.prewarm()
         // Returns at once, so the indicator shows while a cold mic starts.
         capture.begin { [weak self] error in
@@ -86,6 +88,7 @@ final class DictationController {
         // A newer recording is running: this failure is a stale one's.
         guard !capture.isRecording else { return }
         cancelMaxDurationTimer()
+        engine.endPrewarm()
         notify("Couldn't start recording", error.localizedDescription)
         indicator.dismiss()
     }
@@ -98,6 +101,7 @@ final class DictationController {
         guard duration >= minDuration else {
             Log.debug("Ignoring \(String(format: "%.2f", duration))s tap.")
             capture.cancel()
+            engine.endPrewarm()
             soundCues.play(.stop)
             indicator.dismiss()
             return

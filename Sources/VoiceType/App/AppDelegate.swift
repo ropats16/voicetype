@@ -138,9 +138,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Disabled menu line telling the user how to fix a model problem, if any.
     private var engineFixHint: String? {
         switch engine.status {
-        case .missing: return "Model missing — run `make model MODEL=\(modelName)`"
+        case .missing: return downloadHint.map { "Model missing — run `\($0)`" } ?? "Model file missing — see Settings"
         case .failed: return "Model failed to load — see log"
-        case .notLoaded, .loading, .ready: return nil
+        case .notLoaded, .verifying, .loading, .ready: return nil
         }
     }
 
@@ -148,6 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch engine.status {
         case .missing: return "Model missing"
         case .notLoaded, .loading: return "Loading model…"
+        case .verifying: return "Verifying model…"
         case .failed: return "Model failed to load"
         case .ready: break
         }
@@ -221,10 +222,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine.switchModel(to: resolvedModel())
     }
 
-    /// The catalog id of the engine's model, else its file name (for hints).
-    private var modelName: String {
-        ModelCatalog.model(forFile: engine.model.path)?.id ?? URL(fileURLWithPath: engine.model.path).lastPathComponent
-    }
+    /// The command that downloads the engine's model; nil for a custom file.
+    private var downloadHint: String? { ModelSelection.downloadCommand(for: engine.model) }
 
     /// Called on main with each status the engine reports.
     private func engineStatusChanged(_ status: TranscriptionStatus) {
@@ -232,20 +231,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let path = engine.model.path
         switch status {
         case .missing:
-            Log.error("Model not found at \(path). Run `make model MODEL=\(modelName)`.")
-            Notifier.notify(
-                title: "VoiceType: model not found",
-                body: "Model file not found at \(path). Run `make model MODEL=\(modelName)` to download it."
-            )
+            let fix = downloadHint.map { " Run `\($0)` to download it." } ?? ""
+            Log.error("Model not found at \(path).\(fix)")
+            Notifier.notify(title: "VoiceType: model not found", body: "Model file not found at \(path).\(fix)")
         case .failed(let reason):
             Log.error("Model load failed: \(reason)")
-            Notifier.notify(
-                title: "VoiceType: model failed to load",
-                body: "\(reason) Try `make model MODEL=\(modelName)` to re-download it."
-            )
+            let fix = downloadHint.map { " Try `\($0)` to re-download it." } ?? ""
+            Notifier.notify(title: "VoiceType: model failed to load", body: "\(reason)\(fix)")
         case .ready:
-            Log.info("Transcription model loaded.")
-        case .notLoaded, .loading:
+            Log.info("Transcription model loaded: \(path)")
+        case .notLoaded, .verifying, .loading:
             break
         }
         evaluateReadiness()
@@ -256,7 +251,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func evaluateReadiness() {
         rebuildMenu()
         keepMicWarmIfConfigured()
-        guard engine.status == .ready else { return }
+        // Dictation may start while a model is loading, verifying or being
+        // swapped (jobs queue behind it); only no usable model at all blocks it.
+        switch engine.status {
+        case .notLoaded, .missing, .failed: return
+        case .verifying, .loading, .ready: break
+        }
         guard permissions.isAccessibilityTrusted() else { return }
 
         if dictation == nil {
@@ -327,13 +327,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     configStore: configStore,
                     loginItem: loginItem,
                     availableMics: { AudioDevices.inputDevices() },
-                    presentModelFilenames: {
-                        Set((try? FileManager.default.contentsOfDirectory(
-                                atPath: Paths.modelsDir.path)) ?? [])
-                    },
+                    presentModelFilenames: { ModelSelection.presentFilenames() },
                     onNeedsMenuRefresh: { [weak self] in self?.rebuildMenu() },
                     pauseHotkeys: { [weak self] in self?.pauseHotkeys() },
                     reloadHotkeys: { [weak self] in self?.reloadHotkeys() },
+                    hardware: .current,
+                    currentModel: { [engine] in engine.model },
                     modelStatus: engine.status,
                     onModelSettingsChange: { [weak self] in self?.applyModelSettings() }
                 )

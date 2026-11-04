@@ -51,7 +51,7 @@ final class TranscriptionEngineTests: XCTestCase {
     }
 
     private func makeEngine() -> TranscriptionEngine {
-        TranscriptionEngine(modelPath: modelURL.path, makeAdapter: { [fake] _ in fake! })
+        TranscriptionEngine(model: .at(modelURL.path), makeAdapter: { [fake] _ in fake! })
     }
 
     /// Calls `load()` and waits for the engine to settle, returning every status
@@ -76,7 +76,7 @@ final class TranscriptionEngineTests: XCTestCase {
     // MARK: - Status
 
     func testMissingModelFileReportsMissing() async {
-        let engine = TranscriptionEngine(modelPath: "/nonexistent/ggml-none.bin",
+        let engine = TranscriptionEngine(model: .at("/nonexistent/ggml-none.bin"),
                                          makeAdapter: { _ in XCTFail("must not load a missing model"); throw FakeError() })
 
         let seen = await loadAndWait(engine)
@@ -95,7 +95,7 @@ final class TranscriptionEngineTests: XCTestCase {
     }
 
     func testLoadErrorReportsFailedNotMissing() async {
-        let engine = TranscriptionEngine(modelPath: modelURL.path, makeAdapter: { _ in throw FakeError() })
+        let engine = TranscriptionEngine(model: .at(modelURL.path), makeAdapter: { _ in throw FakeError() })
 
         let seen = await loadAndWait(engine)
 
@@ -149,7 +149,7 @@ final class TranscriptionEngineTests: XCTestCase {
     // MARK: - Jobs before ready
 
     func testJobSubmittedWhileLoadingWaitsForTheLoad() async throws {
-        let engine = TranscriptionEngine(modelPath: modelURL.path, makeAdapter: { [fake] _ in
+        let engine = TranscriptionEngine(model: .at(modelURL.path), makeAdapter: { [fake] _ in
             Thread.sleep(forTimeInterval: 0.1)
             return fake!
         })
@@ -164,9 +164,9 @@ final class TranscriptionEngineTests: XCTestCase {
 
     func testJobWithoutALoadedModelThrowsModelNotLoaded() async {
         let neverLoaded = makeEngine()
-        let missing = TranscriptionEngine(modelPath: "/nonexistent/ggml-none.bin", makeAdapter: { _ in throw FakeError() })
+        let missing = TranscriptionEngine(model: .at("/nonexistent/ggml-none.bin"), makeAdapter: { _ in throw FakeError() })
         missing.load()
-        let failed = TranscriptionEngine(modelPath: modelURL.path, makeAdapter: { _ in throw FakeError() })
+        let failed = TranscriptionEngine(model: .at(modelURL.path), makeAdapter: { _ in throw FakeError() })
         _ = await loadAndWait(failed)
 
         for (name, engine) in [("never loaded", neverLoaded), ("missing", missing), ("failed", failed)] {
@@ -180,4 +180,9 @@ final class TranscriptionEngineTests: XCTestCase {
             }
         }
     }
+}
+
+private extension ModelSpec {
+    /// An unverified file, as these lifecycle tests need no checksum.
+    static func at(_ path: String) -> ModelSpec { ModelSpec(path: path, sha256: nil, language: "en") }
 }

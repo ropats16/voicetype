@@ -142,7 +142,7 @@ final class BenchTests: XCTestCase {
             clock.advance(2)      // model load
             return adapter
         }
-        var runner = BenchRunner(engine: engine, modelPath: modelURL.path, shortRuns: shortRuns)
+        var runner = BenchRunner(engine: engine, model: ModelSpec(path: modelURL.path, sha256: nil, language: "en"), shortRuns: shortRuns)
         runner.clock = clock.now
         runner.memory = memory
         return Fixture(adapter: adapter, runner: runner, clips: clips)
@@ -217,7 +217,7 @@ final class BenchTests: XCTestCase {
                 if count == long.samples.count { memory.set(900) }
             })
         }
-        var runner = BenchRunner(engine: engine, modelPath: modelURL.path, shortRuns: 1)
+        var runner = BenchRunner(engine: engine, model: ModelSpec(path: modelURL.path, sha256: nil, language: "en"), shortRuns: 1)
         runner.clock = clock.now
         runner.memory = memory.snapshot
 
@@ -229,7 +229,7 @@ final class BenchTests: XCTestCase {
 
     func testMissingModelFailsBeforeAnyJob() async {
         let engine = BenchEngine(id: "fake") { _ in XCTFail("must not load"); throw TranscriptionError.inferenceFailed }
-        let runner = BenchRunner(engine: engine, modelPath: "/nonexistent/model.bin", shortRuns: 1)
+        let runner = BenchRunner(engine: engine, model: ModelSpec(path: "/nonexistent/model.bin", sha256: nil, language: "en"), shortRuns: 1)
         do {
             _ = try await runner.run([])
             XCTFail("expected an error")
@@ -242,7 +242,7 @@ final class BenchTests: XCTestCase {
         // Every memory read costs a fake second; latencies must not see any.
         let clock = FakeClock()
         let adapter = FakeAdapter(clock: clock, answers: [:])
-        var runner = BenchRunner(engine: BenchEngine(id: "fake") { _ in adapter }, modelPath: modelURL.path, shortRuns: 2)
+        var runner = BenchRunner(engine: BenchEngine(id: "fake") { _ in adapter }, model: ModelSpec(path: modelURL.path, sha256: nil, language: "en"), shortRuns: 2)
         runner.clock = clock.now
         runner.memorySampleInterval = 3600     // timer off: only the deterministic samples
         runner.memory = {

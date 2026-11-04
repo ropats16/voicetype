@@ -89,7 +89,7 @@ final class ModelCatalogTests: XCTestCase {
 
     private let dir = URL(fileURLWithPath: "/models")
 
-    private func resolve(model: String = ModelSelection.automatic, modelPath: String = "",
+    private func resolve(model: ModelChoice = .automatic, modelPath: String = "",
                          language: String = "en", hardware: HardwareProfile? = nil,
                          present: Set<String> = []) -> ModelSpec {
         ModelSelection.resolve(model: model, modelPath: modelPath, language: language,
@@ -128,7 +128,7 @@ final class ModelCatalogTests: XCTestCase {
     }
 
     func testExplicitModelWinsOverAutoPickEvenWhenMissing() {
-        let spec = resolve(model: "medium.en", present: ["ggml-small.en-q5_1.bin"])
+        let spec = resolve(model: .named("medium.en"), present: ["ggml-small.en-q5_1.bin"])
         XCTAssertEqual(spec.path, "/models/ggml-medium.en.bin")
         XCTAssertEqual(spec.sha256, ModelCatalog.model(id: "medium.en")?.sha256)
     }
@@ -136,7 +136,7 @@ final class ModelCatalogTests: XCTestCase {
     func testExplicitModelPathWinsOverEverything() {
         // An existing config's `modelPath` keeps working, and a catalog file is
         // still verified against its pinned checksum.
-        let spec = resolve(model: "small.en", modelPath: "/old/ggml-medium.en.bin")
+        let spec = resolve(model: .named("small.en"), modelPath: "/old/ggml-medium.en.bin")
         XCTAssertEqual(spec.path, "/old/ggml-medium.en.bin")
         XCTAssertEqual(spec.sha256, ModelCatalog.model(id: "medium.en")?.sha256)
     }
@@ -154,13 +154,13 @@ final class ModelCatalogTests: XCTestCase {
     }
 
     func testEnglishOnlyModelsForceEnglish() {
-        XCTAssertEqual(resolve(model: "small.en", language: "fr").language, "en")
-        XCTAssertEqual(resolve(model: "small", language: "fr").language, "fr")
-        XCTAssertEqual(resolve(model: "small", language: "").language, "auto", "blank language = auto-detect")
+        XCTAssertEqual(resolve(model: .named("small.en"), language: "fr").language, "en")
+        XCTAssertEqual(resolve(model: .named("small"), language: "fr").language, "fr")
+        XCTAssertEqual(resolve(model: .named("small"), language: "").language, "auto", "blank language = auto-detect")
     }
 
     func testUnknownModelIdIsTreatedAsAnUnverifiedFileInTheModelsDir() {
-        let spec = resolve(model: "large-v1")
+        let spec = resolve(model: .named("large-v1"))
         XCTAssertEqual(spec.path, "/models/ggml-large-v1.bin")
         XCTAssertNil(spec.sha256)
     }
@@ -177,5 +177,46 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertEqual(ModelSelection.idleUnloadAfter(keepWarm: false, idleMinutes: 2, hardware: appleSilicon(64)), 120)
         XCTAssertEqual(ModelSelection.idleUnloadAfter(keepWarm: false, idleMinutes: 0, hardware: appleSilicon(64)), 60,
                        "a non-positive idle time is clamped to 1 min")
+    }
+
+    // MARK: - Shared rules
+
+    func testOneEnglishOnlyRuleForIdsFilesAndPaths() {
+        for name in ["small.en", "small.en-q5_1", "ggml-small.en.bin", "/m/ggml-medium.en-q5_0.bin"] {
+            XCTAssertTrue(ModelCatalog.isEnglishOnly(name), name)
+        }
+        for name in ["small", "small-q5_1", "ggml-large-v3-turbo.bin", "/m/finetune.bin", "/m/encoder.bin"] {
+            XCTAssertFalse(ModelCatalog.isEnglishOnly(name), name)
+        }
+    }
+
+    func testModelChoiceIsStoredAsAutoOrTheId() throws {
+        let encoded = try JSONEncoder().encode([ModelChoice.automatic, .named("small.en-q5_1")])
+        XCTAssertEqual(String(decoding: encoded, as: UTF8.self), #"["auto","small.en-q5_1"]"#)
+        XCTAssertEqual(try JSONDecoder().decode([ModelChoice].self, from: Data(#"["auto","","base"]"#.utf8)),
+                       [.automatic, .automatic, .named("base")])
+    }
+
+    // MARK: - Download hint
+
+    func testDownloadCommandOnlyForCatalogModelsInTheModelsFolder() {
+        let catalog = ModelSpec.file("/models/ggml-small.en-q5_1.bin")
+        XCTAssertEqual(ModelSelection.downloadCommand(for: catalog, modelsDir: dir), "make model MODEL=small.en-q5_1")
+        XCTAssertNil(ModelSelection.downloadCommand(for: .file("/models/finetune.bin"), modelsDir: dir),
+                     "A custom file has no download command")
+        XCTAssertNil(ModelSelection.downloadCommand(for: .file("/old/ggml-medium.en.bin"), modelsDir: dir),
+                     "make model wouldn't put it at a custom path")
+        XCTAssertNil(ModelSelection.downloadCommand(for: resolve(model: .named("large-v1")), modelsDir: dir),
+                     "A model the catalog doesn't pin can't be fetched by make model")
+    }
+
+    func testPartialDownloadsDontCountAsPresent() throws {
+        let models = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("models-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: models, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: models) }
+        FileManager.default.createFile(atPath: models.appendingPathComponent("ggml-tiny.en.bin").path, contents: Data())
+        FileManager.default.createFile(atPath: models.appendingPathComponent("ggml-small.en.bin.part").path, contents: Data())
+
+        XCTAssertEqual(ModelSelection.presentFilenames(in: models), ["ggml-tiny.en.bin"])
     }
 }

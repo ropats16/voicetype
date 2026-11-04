@@ -17,7 +17,9 @@ final class WhisperEngineContractTests: XCTestCase {
         try XCTSkipUnless(FileManager.default.fileExists(atPath: wavPath), "jfk.wav fixture not present")
         let samples = try loadMono16k(wavPath)
 
-        let engine = TranscriptionEngine.whisper(modelPath: modelPath, language: "en", threads: 0)
+        let engine = TranscriptionEngine.whisper(
+            // Unverified: keeps this test from writing the user's checksum cache.
+            model: ModelSpec(path: modelPath, sha256: nil, language: "en"), threads: 0)
         engine.load()
         let transcript = try await engine.transcribe(samples)
 

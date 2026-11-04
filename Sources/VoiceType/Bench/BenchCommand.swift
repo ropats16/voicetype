@@ -67,7 +67,8 @@ enum BenchCommand {
             let thermalAtStart = MachineInfo.thermalState()
             log("Benching \(engine.id) with \(modelURL.lastPathComponent) (\(clips.of(.short).count) short × \(runs), "
                 + "\(clips.of(.long).count) long; language \(options.language), threads \(options.threads))")
-            let runner = BenchRunner(engine: engine, modelPath: modelURL.path, shortRuns: runs)
+            let runner = BenchRunner(engine: engine, model: .file(modelURL.path, language: options.language),
+                                     shortRuns: runs)
             let results = try CommandLineSupport.blocking { try await runner.run(clips) }
 
             let report = BenchReport(

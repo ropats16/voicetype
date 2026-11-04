@@ -10,9 +10,12 @@ struct WhisperModel: Hashable, Identifiable {
     /// Lowercase hex SHA-256 of the file (the Hugging Face LFS object id).
     let sha256: String
 
-    var filename: String { "ggml-\(id).bin" }
+    var filename: String { Self.filename(for: id) }
     /// `.en` models only transcribe English; the rest take any language.
-    var isEnglishOnly: Bool { id.contains(".en") }
+    var isEnglishOnly: Bool { ModelCatalog.isEnglishOnly(id) }
+
+    /// The one filename rule: `ggml-<id>.bin`, as published on Hugging Face.
+    static func filename(for id: String) -> String { "ggml-\(id).bin" }
     /// `q5_1`, `q8_0`, … for quantized variants; nil for full precision.
     var quantization: String? {
         guard let dash = id.lastIndex(of: "-"), id[id.index(after: dash)...].hasPrefix("q") else { return nil }
@@ -162,5 +165,12 @@ enum ModelCatalog {
 
     static func isEnglish(_ language: String) -> Bool {
         language.lowercased() == "en"
+    }
+
+    /// The one English-only rule, for a model id, file name or path: whisper's
+    /// `.en` models (`small.en`, `small.en-q5_1`, `ggml-small.en.bin`).
+    static func isEnglishOnly(_ idOrPath: String) -> Bool {
+        let name = URL(fileURLWithPath: idOrPath).lastPathComponent
+        return name.hasSuffix(".en") || name.contains(".en.") || name.contains(".en-")
     }
 }

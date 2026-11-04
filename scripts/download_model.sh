@@ -34,36 +34,57 @@ BYTES="$(model_field "$MODEL" 3)"
 
 file_size() { stat -f%z "$1" 2>/dev/null || echo 0; }
 
-verify() {
+# sha_ok <file> — the file's SHA-256 is the pinned one.
+sha_ok() {
   echo "Checking SHA-256 of ${FILE}..."
-  local actual
-  actual="$(shasum -a 256 "$DEST" | awk '{print $1}')"
-  if [[ "$actual" != "$SHA" ]]; then
-    echo "error: $FILE checksum mismatch (got $actual, expected $SHA)." >&2
-    echo "       Delete $DEST and run this again." >&2
-    return 1
-  fi
+  [[ "$(shasum -a 256 "$1" | awk '{print $1}')" == "$SHA" ]]
 }
 
 mkdir -p "$VOICETYPE_MODELS_DIR"
 
+# The download lands in <file>.part and is renamed only once complete and
+# verified, so the app never sees (or tries to load) a partial model.
+PART="$DEST.part"
+
 if [[ -f "$DEST" ]]; then
-  if [[ "$(file_size "$DEST")" == "$BYTES" ]]; then
-    verify
-    echo "✓ $FILE already present ($(du -h "$DEST" | cut -f1)) at $DEST"
-    exit 0
+  size="$(file_size "$DEST")"
+  if [[ "$size" == "$BYTES" ]]; then
+    if sha_ok "$DEST"; then
+      echo "✓ $FILE already present ($(du -h "$DEST" | cut -f1)) at $DEST"
+      exit 0
+    fi
+    echo "error: $FILE doesn't match its published checksum. Delete $DEST and run this again." >&2
+    exit 1
+  elif (( size < BYTES )); then
+    echo "Existing $FILE is incomplete ($size of $BYTES bytes); resuming."
+    mv -f "$DEST" "$PART"   # older versions downloaded in place
+  else
+    echo "Existing $FILE is larger than expected ($size of $BYTES bytes); downloading again."
+    rm -f "$DEST"
   fi
-  echo "Existing $FILE is incomplete ($(file_size "$DEST") of $BYTES bytes); resuming."
 fi
 
-echo "Downloading $FILE from $BASE_URL"
-echo "  → $DEST"
-# -L follow redirects, -C - resume, --fail surface HTTP errors.
-curl -L --fail -C - -o "$DEST" "$BASE_URL/$FILE"
+# A .part bigger than the file can't be resumed (the server would answer 416).
+if [[ -f "$PART" ]] && (( $(file_size "$PART") > BYTES )); then
+  echo "Discarding an oversized partial download."
+  rm -f "$PART"
+fi
 
-if [[ "$(file_size "$DEST")" != "$BYTES" ]]; then
-  echo "error: download incomplete ($(file_size "$DEST") of $BYTES bytes). Check your connection and retry." >&2
+if [[ "$(file_size "$PART")" != "$BYTES" ]]; then
+  echo "Downloading $FILE from $BASE_URL"
+  echo "  → $DEST"
+  # -L follow redirects, -C - resume, --fail surface HTTP errors.
+  curl -L --fail -C - -o "$PART" "$BASE_URL/$FILE"
+fi
+
+if [[ "$(file_size "$PART")" != "$BYTES" ]]; then
+  echo "error: download incomplete ($(file_size "$PART") of $BYTES bytes). Check your connection and retry." >&2
   exit 1
 fi
-verify
+if ! sha_ok "$PART"; then
+  rm -f "$PART"
+  echo "error: downloaded $FILE doesn't match its published checksum (discarded). Retry." >&2
+  exit 1
+fi
+mv -f "$PART" "$DEST"
 echo "✓ Downloaded $FILE ($(du -h "$DEST" | cut -f1))"

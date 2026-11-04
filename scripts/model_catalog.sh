@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 # Shared model table for the shell scripts (sourced, not run). It mirrors the
 # app's engine catalog (Sources/VoiceType/Transcription/ModelCatalog.swift) —
 # ids, pinned SHA-256s, sizes, and the chip + RAM auto-pick — and

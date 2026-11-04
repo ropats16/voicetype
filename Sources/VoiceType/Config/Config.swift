@@ -5,8 +5,8 @@ import Foundation
 /// Decoding is tolerant: any missing key falls back to its default, so a
 /// hand-edited or older config keeps working and new fields are forward-safe.
 struct Config: Codable {
-    /// A catalog model id (e.g. "small.en-q5_1") or "auto" = pick by chip + RAM.
-    var model: String
+    /// "auto" (pick by chip + RAM) or a model id, e.g. "small.en-q5_1".
+    var model: ModelChoice
     /// A specific model file; overrides `model` when non-empty. Older configs
     /// carry one, so an existing choice keeps working.
     var modelPath: String
@@ -25,7 +25,7 @@ struct Config: Codable {
 
     static var defaults: Config {
         Config(
-            model: ModelSelection.automatic,
+            model: .automatic,
             modelPath: "",
             hold: .controlShift,
             toggle: .controlOptionSpace,
@@ -42,7 +42,7 @@ struct Config: Codable {
         )
     }
 
-    init(model: String = ModelSelection.automatic, modelPath: String, hold: KeyBinding, toggle: KeyBinding, cancelKeyCode: Int,
+    init(model: ModelChoice = .automatic, modelPath: String, hold: KeyBinding, toggle: KeyBinding, cancelKeyCode: Int,
          maxRecordingSeconds: Double, trailingSpace: Bool, microphoneUID: String?,
          soundCues: Bool, language: String, threads: Int, keepMicWarm: Bool,
          keepModelWarm: Bool? = nil, modelIdleMinutes: Double = 5) {
@@ -65,7 +65,7 @@ struct Config: Codable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = Config.defaults
-        model = try c.decodeIfPresent(String.self, forKey: .model) ?? d.model
+        model = try c.decodeIfPresent(ModelChoice.self, forKey: .model) ?? d.model
         modelPath = try c.decodeIfPresent(String.self, forKey: .modelPath) ?? d.modelPath
         hold = try c.decodeIfPresent(KeyBinding.self, forKey: .hold) ?? d.hold
         toggle = try c.decodeIfPresent(KeyBinding.self, forKey: .toggle) ?? d.toggle

@@ -73,7 +73,11 @@ final class SettingsViewModelTests: XCTestCase {
             presentModelFilenames: { presentFiles },
             onNeedsMenuRefresh: { [weak self] in self?.menuRefreshCount += 1 },
             pauseHotkeys: {},
-            reloadHotkeys: {}
+            reloadHotkeys: {},
+            hardware: .current,
+            currentModel: { ModelSpec.file("/m/ggml-tiny.en.bin") },
+            modelStatus: .ready,
+            onModelSettingsChange: {}
         )
     }
 
@@ -86,7 +90,11 @@ final class SettingsViewModelTests: XCTestCase {
             presentModelFilenames: { Set() },
             onNeedsMenuRefresh: { [weak self] in self?.menuRefreshCount += 1 },
             pauseHotkeys: { [weak self] in self?.pauseCount += 1 },
-            reloadHotkeys: { [weak self] in self?.reloadCount += 1 }
+            reloadHotkeys: { [weak self] in self?.reloadCount += 1 },
+            hardware: .current,
+            currentModel: { ModelSpec.file("/m/ggml-tiny.en.bin") },
+            modelStatus: .ready,
+            onModelSettingsChange: {}
         )
     }
 
@@ -176,7 +184,7 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testSelectModelFiresMenuRefresh() {
         let vm = makeVM(presentFiles: ["ggml-tiny.en.bin"])
-        vm.selectModel("tiny.en")
+        vm.selectModel(.catalog("tiny.en"))
         XCTAssertGreaterThan(menuRefreshCount, 0, "selectModel must call onNeedsMenuRefresh")
     }
 

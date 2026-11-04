@@ -15,20 +15,41 @@ struct ModelChecksumMismatch: LocalizedError, Equatable {
 ///
 /// Hashing a 1.5 GB model takes seconds, so results are cached in a small JSON
 /// sidecar (`Paths.checksumCacheFile`) keyed by path, and reused while the
-/// file's size and modification date are unchanged. A sidecar rather than
+/// file's size, modification date, inode and status-change time (ctime) are
+/// unchanged. The last two can't be preserved by a user or tool (`touch -r`
+/// can fake an mtime, not a ctime), so a replaced or rewritten file is always
+/// re-hashed. A sidecar rather than
 /// UserDefaults because it sits beside `config.json`: the `.app` and a
 /// `swift run` build (different defaults domains) share it, it honours
 /// `VOICETYPE_APP_SUPPORT`, and deleting it just forces a re-hash. Bad results
 /// are cached too, so a corrupt file isn't re-hashed on every launch; replacing
-/// it changes its size or date and so re-checks it.
+/// it re-checks it.
 ///
 /// Thread-safe; the engine calls it on its own queue, never on main.
 final class ModelVerifier: @unchecked Sendable {
     static let shared = ModelVerifier(cacheURL: Paths.checksumCacheFile)
 
-    private struct Entry: Codable, Equatable {
+    /// What identifies one version of a file on disk.
+    private struct Stamp: Codable, Equatable {
         let size: Int64
         let modified: TimeInterval
+        let changed: TimeInterval   // ctime
+        let inode: UInt64
+
+        init(path: String) throws {
+            var st = stat()
+            guard stat(path, &st) == 0 else {
+                throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: path])
+            }
+            size = Int64(st.st_size)
+            modified = TimeInterval(st.st_mtimespec.tv_sec) + TimeInterval(st.st_mtimespec.tv_nsec) / 1e9
+            changed = TimeInterval(st.st_ctimespec.tv_sec) + TimeInterval(st.st_ctimespec.tv_nsec) / 1e9
+            inode = UInt64(st.st_ino)
+        }
+    }
+
+    private struct Entry: Codable, Equatable {
+        let stamp: Stamp
         let sha256: String
     }
 
@@ -45,21 +66,22 @@ final class ModelVerifier: @unchecked Sendable {
     }
 
     /// Throws `ModelChecksumMismatch` unless the file at `path` hashes to
-    /// `expected` (or a file-read error if it can't be read).
-    func verify(path: String, sha256 expected: String) throws {
+    /// `expected` (or a file-read error if it can't be read). `willHash` runs
+    /// first if the file must actually be hashed (not in the cache), so the
+    /// caller can say so.
+    func verify(path: String, sha256 expected: String, willHash: () -> Void = {}) throws {
         let url = URL(fileURLWithPath: path)
-        let attributes = try FileManager.default.attributesOfItem(atPath: path)
-        let size = (attributes[.size] as? NSNumber)?.int64Value ?? -1
-        let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let stamp = try Stamp(path: path)
 
         let actual: String
-        if let cached = lock.withLock({ loadedCache()[path] }), cached.size == size, cached.modified == modified {
+        if let cached = lock.withLock({ loadedCache()[path] }), cached.stamp == stamp {
             actual = cached.sha256
         } else {
+            willHash()
             let start = Date()
             actual = try hash(url)
             Log.info("Checksummed \(url.lastPathComponent) in \(String(format: "%.1f", Date().timeIntervalSince(start)))s.")
-            lock.withLock { store(Entry(size: size, modified: modified, sha256: actual), for: path) }
+            lock.withLock { store(Entry(stamp: stamp, sha256: actual), for: path) }
         }
         guard actual.lowercased() == expected.lowercased() else {
             throw ModelChecksumMismatch(filename: url.lastPathComponent)

@@ -21,7 +21,7 @@ final class ConfigTests: XCTestCase {
 
     func testAFreshConfigAutoPicksTheModel() throws {
         let c = try decode("{}")
-        XCTAssertEqual(c.model, ModelSelection.automatic)
+        XCTAssertEqual(c.model, .automatic)
         XCTAssertEqual(c.modelPath, "", "No hard-coded medium.en default any more")
         XCTAssertNil(c.keepModelWarm, "Keep-warm defaults to automatic (by RAM)")
         XCTAssertEqual(c.modelIdleMinutes, 5)
@@ -40,7 +40,7 @@ final class ConfigTests: XCTestCase {
 
     func testNewModelKeysAreRead() throws {
         let c = try decode(#"{"model": "small-q5_1", "language": "de", "keepModelWarm": false, "modelIdleMinutes": 2}"#)
-        XCTAssertEqual(c.model, "small-q5_1")
+        XCTAssertEqual(c.model, .named("small-q5_1"))
         XCTAssertEqual(c.language, "de")
         XCTAssertEqual(c.keepModelWarm, false)
         XCTAssertEqual(c.modelIdleMinutes, 2)
@@ -48,10 +48,10 @@ final class ConfigTests: XCTestCase {
 
     func testModelKeysRoundTrip() throws {
         var c = Config.defaults
-        c.model = "base.en-q8_0"
+        c.model = .named("base.en-q8_0")
         c.keepModelWarm = true
         let back = try JSONDecoder().decode(Config.self, from: JSONEncoder().encode(c))
-        XCTAssertEqual(back.model, "base.en-q8_0")
+        XCTAssertEqual(back.model, .named("base.en-q8_0"))
         XCTAssertEqual(back.keepModelWarm, true)
     }
 

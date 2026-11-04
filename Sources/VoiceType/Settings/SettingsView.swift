@@ -73,21 +73,22 @@ struct SettingsView: View {
 
             // MARK: Model
             Section {
+                let lists = viewModel.modelLists
                 Picker("Model",
                        selection: Binding(
-                           get: { viewModel.selectedModelID },
+                           get: { viewModel.modelRow },
                            set: { viewModel.selectModel($0) }
                        )) {
-                    Text("Automatic (\(viewModel.recommendedModel.label))").tag(ModelSelection.automatic)
+                    Text(viewModel.automaticLabel).tag(ModelRow.automatic)
                     if let custom = viewModel.customModelName {
-                        Text("Custom file: \(custom)").tag(SettingsViewModel.customModelID)
+                        Text("Custom file: \(custom)").tag(ModelRow.custom)
                     }
-                    ForEach(viewModel.downloadedModels) { model in
-                        Text(model.label).tag(model.id)
+                    ForEach(lists.downloaded) { model in
+                        Text(model.label).tag(ModelRow.catalog(model.id))
                     }
                     Section("Not downloaded — run: make model MODEL=<name>") {
-                        ForEach(viewModel.notDownloadedModels) { model in
-                            Text(model.label).tag(model.id).disabled(true)
+                        ForEach(lists.notDownloaded) { model in
+                            Text(model.label).tag(ModelRow.catalog(model.id)).disabled(true)
                         }
                     }
                 }
@@ -103,21 +104,20 @@ struct SettingsView: View {
                 }
                 .disabled(!viewModel.isLanguageSelectable)
 
-                Toggle("Keep model loaded",
-                       isOn: Binding(
-                           get: { viewModel.keepModelWarm },
-                           set: { viewModel.setKeepModelWarm($0) }
-                       ))
-                Text(viewModel.keepModelWarm
-                     ? "Fastest dictation; the model stays in memory."
-                     : "Frees memory when idle; the next dictation reloads the model first.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                Picker("Keep model loaded",
+                       selection: Binding(
+                           get: { viewModel.keepWarm },
+                           set: { viewModel.setKeepWarm($0) }
+                       )) {
+                    ForEach(KeepWarmChoice.allCases, id: \.self) { choice in
+                        Text(viewModel.label(for: choice)).tag(choice)
+                    }
+                }
 
                 if let hint = viewModel.modelStatusHint {
                     Text(hint)
                         .font(.caption)
-                        .foregroundColor(viewModel.modelStatus == .loading ? .secondary : .red)
+                        .foregroundColor([.loading, .verifying].contains(viewModel.modelStatus) ? .secondary : .red)
                 }
             } header: {
                 Text("Model")
