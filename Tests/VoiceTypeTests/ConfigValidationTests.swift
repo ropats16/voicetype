@@ -47,6 +47,13 @@ final class ConfigValidationTests: XCTestCase {
                        "Modifier order must not matter when comparing bindings")
     }
 
+    func testHoldEqualsToggleViaAliasesIsError() {
+        var config = Config.defaults
+        config.hold = KeyBinding(keyCode: -1, modifiers: ["control", "shift"])
+        config.toggle = KeyBinding(keyCode: -1, modifiers: ["Shift", "ctrl"])
+        XCTAssertEqual(errors(config).count, 1, "Aliases name the same modifier at runtime")
+    }
+
     // MARK: - Error — empty/unmatchable binding
 
     func testEmptyHoldBindingIsError() {
@@ -104,6 +111,12 @@ final class ConfigValidationTests: XCTestCase {
     func testKnownModifiersAreMatchedCaseInsensitively() {
         var config = Config.defaults
         config.hold = KeyBinding(keyCode: -1, modifiers: ["Control", "SHIFT"])
+        XCTAssertTrue(warnings(config).isEmpty)
+    }
+
+    func testModifierAliasesAreKnown() {
+        var config = Config.defaults
+        config.hold = KeyBinding(keyCode: -1, modifiers: ["cmd", "alt", "ctrl", "fn", "globe"])
         XCTAssertTrue(warnings(config).isEmpty)
     }
 

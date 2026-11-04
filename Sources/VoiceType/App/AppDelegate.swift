@@ -91,12 +91,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let hold = NSMenuItem(title: "Hold to talk: \(HotkeyDescription.describe(configStore.config.hold))",
+        let hold = NSMenuItem(title: "Hold to talk: \(configStore.config.hold)",
                               action: nil, keyEquivalent: "")
         hold.isEnabled = false
         menu.addItem(hold)
 
-        let toggle = NSMenuItem(title: "Toggle to talk: \(HotkeyDescription.describe(configStore.config.toggle))",
+        let toggle = NSMenuItem(title: "Toggle to talk: \(configStore.config.toggle)",
                                 action: nil, keyEquivalent: "")
         toggle.isEnabled = false
         menu.addItem(toggle)
@@ -269,7 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Log only on the first successful wire-up, not on every hotkey rebind.
             if !hasLoggedReady {
                 hasLoggedReady = true
-                Log.info("VoiceType is ready. Hold \(HotkeyDescription.describe(configStore.config.hold)) or press \(HotkeyDescription.describe(configStore.config.toggle)) to dictate.")
+                Log.info("VoiceType is ready. Hold \(configStore.config.hold) or press \(configStore.config.toggle) to dictate.")
             }
         } else {
             // start() failed (e.g. Accessibility revoked mid-session). Re-arm the
@@ -329,50 +329,3 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Human-readable key binding labels for the menu.
-enum HotkeyDescription {
-    static func describe(_ binding: KeyBinding) -> String {
-        // Pure modifier combo (no main key), e.g. fn+Shift.
-        if binding.keyCode < 0 {
-            return binding.modifiers.map { symbol(for: $0) }.joined(separator: " ")
-        }
-        if binding.modifiers.isEmpty, let name = modifierKeyName(binding.keyCode) {
-            return name
-        }
-        let mods = binding.modifiers.map { symbol(for: $0) }.joined()
-        return mods + keyName(binding.keyCode)
-    }
-
-    private static func modifierKeyName(_ keyCode: Int) -> String? {
-        switch keyCode {
-        case 61: return "Right ⌥"
-        case 58: return "Left ⌥"
-        case 54: return "Right ⌘"
-        case 55: return "Left ⌘"
-        case 62: return "Right ⌃"
-        case 59: return "Left ⌃"
-        case 60: return "Right ⇧"
-        case 56: return "Left ⇧"
-        default: return nil
-        }
-    }
-
-    private static func symbol(for modifier: String) -> String {
-        switch modifier {
-        case "command": return "⌘"
-        case "option": return "⌥"
-        case "control": return "⌃"
-        case "shift": return "⇧"
-        case "function", "fn", "globe": return "fn"
-        default: return ""
-        }
-    }
-
-    private static func keyName(_ keyCode: Int) -> String {
-        switch keyCode {
-        case 49: return "Space"
-        case 53: return "Esc"
-        default: return "key\(keyCode)"
-        }
-    }
-}

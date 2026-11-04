@@ -1,19 +1,20 @@
 import Foundation
 import CoreGraphics
-import AppKit
 
-/// Global hotkey monitoring via a `CGEventTap` (requires Accessibility).
+/// Global hotkey monitoring via a `CGEventTap` (requires Accessibility): a thin
+/// adapter that decodes tap events into `KeyEvent`s, feeds them to
+/// `HotkeyEdges` (where all binding rules live), and fans the resulting actions
+/// out to the callbacks — hold start/stop, toggle press, cancel.
 ///
-/// Wires **hold-to-talk** (press the hold key to start recording, release to
-/// transcribe; fires on both edges), **toggle-to-talk** (press once to start,
-/// press again to stop; fires on the press edge only), and **Esc/cancel-key**
-/// handling (a plain key-down on `cancelKeyCode` fires `onCancel`). Bindings are
-/// rebindable via config. Different binding forms are reported differently by
-/// the system — pure-modifier combos and single modifiers arrive as
-/// `flagsChanged`, regular keys as keyDown/keyUp — so the per-event satisfaction
-/// rules and press/release edge detection live in the pure
-/// `HotkeyMatcher`/`EdgeDetector` helpers; this class just feeds them events
-/// from the tap and fans edges out to the callbacks.
+/// The tap runs on its own thread and run loop, so a stalled main thread (model
+/// load, a slow paste) can't delay or drop key edges, nor get the tap disabled
+/// by timeout. When the tap is disabled anyway, or torn down by `stop()` (a
+/// rebind re-creates it), mid-hold, a synthetic hold stop is delivered so the
+/// recording doesn't run to the cap.
+///
+/// Thread rules: `start()`, `stop()` and the callbacks are main-thread only.
+/// Edge state is confined to the tap thread; actions reach main via
+/// `DispatchQueue.main.async`, in order. Nothing is locked.
 final class HotkeyManager {
     let hold: KeyBinding
     let toggle: KeyBinding
@@ -29,10 +30,7 @@ final class HotkeyManager {
     /// receiver decides whether there is anything to cancel.
     var onCancel: (() -> Void)?
 
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
-    private var holdEdge = EdgeDetector()
-    private var toggleEdge = EdgeDetector()
+    private var tap: EventTapThread?
 
     init(hold: KeyBinding, toggle: KeyBinding, cancelKeyCode: Int) {
         self.hold = hold
@@ -44,149 +42,136 @@ final class HotkeyManager {
     /// missing Accessibility permission).
     @discardableResult
     func start() -> Bool {
-        guard eventTap == nil else { return true }
+        guard tap == nil else { return true }
+        let edges = HotkeyEdges(hold: hold, toggle: toggle, cancelKeyCode: cancelKeyCode)
+        // Strong capture: a synthetic release sent while stopping must still
+        // arrive after the owner has dropped this manager. stop() breaks the cycle.
+        guard let tap = EventTapThread(edges: edges, deliver: { actions in
+            DispatchQueue.main.async { self.deliver(actions) }
+        }) else {
+            Log.error("Failed to create event tap (Accessibility not granted?)")
+            return false
+        }
+        self.tap = tap
+        Log.info("Hotkey event tap installed.")
+        return true
+    }
+
+    /// Removes the tap. If a hold is active, its stop is still delivered.
+    func stop() {
+        tap?.stop()
+        tap = nil
+    }
+
+    private func deliver(_ actions: [HotkeyAction]) {
+        for action in actions {
+            switch action {
+            case .holdStart: onHoldStart?()
+            case .holdStop: onHoldStop?()
+            case .togglePress: onTogglePress?()
+            case .cancel: onCancel?()
+            }
+        }
+    }
+}
+
+/// Owns one `CGEventTap` and the dedicated thread whose run loop services it.
+/// `init` and `stop()` are called from main; everything else runs on the tap
+/// thread. The thread retains this object until its run loop exits.
+private final class EventTapThread {
+    private var edges: HotkeyEdges
+    private let deliver: ([HotkeyAction]) -> Void
+    private var port: CFMachPort?
+    /// Written on the tap thread before `init` returns (ordered by the semaphore).
+    private var runLoop: CFRunLoop?
+
+    init?(edges: HotkeyEdges, deliver: @escaping ([HotkeyAction]) -> Void) {
+        self.edges = edges
+        self.deliver = deliver
 
         let mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
             (1 << CGEventType.keyUp.rawValue) |
             (1 << CGEventType.flagsChanged.rawValue)
-
-        let refcon = Unmanaged.passUnretained(self).toOpaque()
-        guard let tap = CGEvent.tapCreate(
+        guard let port = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: .listenOnly,
             eventsOfInterest: mask,
-            callback: hotkeyEventCallback,
-            userInfo: refcon
-        ) else {
-            Log.error("Failed to create event tap (Accessibility not granted?)")
-            return false
+            callback: eventTapCallback,
+            userInfo: Unmanaged.passUnretained(self).toOpaque()
+        ) else { return nil }
+        self.port = port
+
+        let ready = DispatchSemaphore(value: 0)
+        let thread = Thread { [self] in
+            let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0)
+            let current = CFRunLoopGetCurrent()
+            runLoop = current
+            CFRunLoopAddSource(current, source, .commonModes)
+            CGEvent.tapEnable(tap: port, enable: true)
+            ready.signal()
+            CFRunLoopRun()   // until stop()
         }
-
-        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-        CGEvent.tapEnable(tap: tap, enable: true)
-
-        eventTap = tap
-        runLoopSource = source
-        Log.info("Hotkey event tap installed.")
-        return true
+        thread.name = "VoiceType.HotkeyTap"
+        thread.qualityOfService = .userInteractive
+        thread.start()
+        ready.wait()
     }
 
+    /// Tears the tap down on its own thread (so edge state is never shared),
+    /// releasing an active hold first, then ends the thread.
     func stop() {
-        if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: false) }
-        if let source = runLoopSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
-        eventTap = nil
-        runLoopSource = nil
-        holdEdge = EdgeDetector()
-        toggleEdge = EdgeDetector()
+        guard let runLoop else { return }
+        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.commonModes.rawValue) { [self] in
+            if let port {
+                CGEvent.tapEnable(tap: port, enable: false)
+                CFMachPortInvalidate(port)
+                self.port = nil
+            }
+            send(edges.reset())
+            CFRunLoopStop(runLoop)
+        }
+        CFRunLoopWakeUp(runLoop)
     }
 
-    // MARK: - Event handling (called from the tap callback on the main run loop)
-
+    /// Tap thread.
     func handle(type: CGEventType, event: CGEvent) {
-        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: true) }
-            // Events were dropped while the tap was off, so a release edge may
-            // have been missed mid-keypress. Reset both detectors (as in stop())
-            // to a clean state; both hold and toggle depend on edge tracking.
-            holdEdge = EdgeDetector()
-            toggleEdge = EdgeDetector()
+        let kind: KeyEvent.Kind
+        switch type {
+        case .keyDown: kind = .keyDown
+        case .keyUp: kind = .keyUp
+        case .flagsChanged: kind = .flagsChanged
+        case .tapDisabledByTimeout, .tapDisabledByUserInput:
+            if let port { CGEvent.tapEnable(tap: port, enable: true) }
+            // Events were dropped while the tap was off, so a release may have
+            // been missed mid-hold.
+            send(edges.reset())
+            return
+        default:
             return
         }
-
-        // Decode the event once, then drive each binding's edge detector off the
-        // pure satisfaction rules. Pure-modifier combos type nothing; regular
-        // keys still pass through (the tap is listen-only).
-        let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
-        let isAutorepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
-        let flags = event.flags
-
-        let holdReading = HotkeyMatcher.satisfaction(
-            of: hold, eventType: type, keyCode: keyCode, flags: flags, isAutorepeat: isAutorepeat)
-        switch holdEdge.update(with: holdReading) {
-        case .press:   emit(onHoldStart)
-        case .release: emit(onHoldStop)
-        case nil:      break
-        }
-
-        let toggleReading = HotkeyMatcher.satisfaction(
-            of: toggle, eventType: type, keyCode: keyCode, flags: flags, isAutorepeat: isAutorepeat)
-        // Toggle fires on the press edge only, exactly once per physical press.
-        if toggleEdge.update(with: toggleReading) == .press { emit(onTogglePress) }
-
-        // Cancel key (default Esc): a plain non-modifier key, so a fresh keyDown
-        // for cancelKeyCode fires onCancel directly (no edge state needed — the
-        // autorepeat guard already prevents repeats while it's held). Fired
-        // unconditionally; DictationController decides if there's a recording to
-        // cancel. The tap is listen-only, so the Esc press still passes through
-        // to the focused app — acceptable because the user is dictating (not
-        // interacting with the app) while recording; switching to an
-        // intercepting tap is out of scope here.
-        if HotkeyMatcher.isCancelKeyDown(eventType: type, keyCode: keyCode,
-                                         cancelKeyCode: cancelKeyCode, isAutorepeat: isAutorepeat) {
-            emit(onCancel)
-        }
+        send(edges.handle(KeyEvent(
+            kind: kind,
+            keyCode: Int(event.getIntegerValueField(.keyboardEventKeycode)),
+            flags: event.flags,
+            isAutorepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0)))
     }
 
-    /// Hops a callback to the main thread, matching the rest of the app.
-    private func emit(_ callback: (() -> Void)?) {
-        guard let callback else { return }
-        DispatchQueue.main.async { callback() }
-    }
-
-    // MARK: - Modifier key helpers
-
-    /// Combined `CGEventFlags` for a set of modifier names (used by combo holds).
-    static func flags(for modifiers: [String]) -> CGEventFlags {
-        var flags: CGEventFlags = []
-        for modifier in modifiers {
-            switch modifier.lowercased() {
-            case "command", "cmd": flags.insert(.maskCommand)
-            case "option", "alt": flags.insert(.maskAlternate)
-            case "control", "ctrl": flags.insert(.maskControl)
-            case "shift": flags.insert(.maskShift)
-            case "function", "fn", "globe": flags.insert(.maskSecondaryFn)
-            default: break
-            }
-        }
-        return flags
-    }
-
-    /// Modifier virtual key codes that are reported via flagsChanged.
-    static func isModifierKeyCode(_ keyCode: Int) -> Bool {
-        // 54 RCmd, 55 LCmd, 56 LShift, 58 LOpt, 59 LCtrl, 60 RShift, 61 ROpt, 62 RCtrl
-        [54, 55, 56, 58, 59, 60, 61, 62].contains(keyCode)
-    }
-
-    /// Device-specific modifier bit (NX_DEVICE…KEYMASK) for a modifier key code,
-    /// used to tell press from release on flagsChanged.
-    static func deviceBit(for keyCode: Int) -> UInt64 {
-        switch keyCode {
-        case 55: return 0x08        // Left Command
-        case 54: return 0x10        // Right Command
-        case 56: return 0x02        // Left Shift
-        case 60: return 0x04        // Right Shift
-        case 58: return 0x20        // Left Option
-        case 61: return 0x40        // Right Option
-        case 59: return 0x01        // Left Control
-        case 62: return 0x2000      // Right Control
-        default: return 0
-        }
+    private func send(_ actions: [HotkeyAction]) {
+        if !actions.isEmpty { deliver(actions) }
     }
 }
 
-/// C-compatible tap callback; routes back to the `HotkeyManager` via refcon.
-private func hotkeyEventCallback(
+/// C-compatible tap callback; routes to the `EventTapThread` via refcon.
+private func eventTapCallback(
     proxy: CGEventTapProxy,
     type: CGEventType,
     event: CGEvent,
     refcon: UnsafeMutableRawPointer?
 ) -> Unmanaged<CGEvent>? {
     if let refcon {
-        let manager = Unmanaged<HotkeyManager>.fromOpaque(refcon).takeUnretainedValue()
-        manager.handle(type: type, event: event)
+        Unmanaged<EventTapThread>.fromOpaque(refcon).takeUnretainedValue().handle(type: type, event: event)
     }
     return Unmanaged.passUnretained(event)   // listen-only: always pass through
 }

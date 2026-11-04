@@ -1,29 +1,5 @@
 import Foundation
 
-/// A global key binding. Three forms:
-/// - **Modifier combo** (default hold = Control+Shift): `keyCode < 0`, `modifiers`
-///   lists the pure modifiers that must be held together. Types nothing.
-/// - **Single modifier** (e.g. Right Option): `modifiers` empty, `keyCode` is the
-///   modifier's key code; left/right is distinguished via the device bit.
-/// - **Regular key + modifiers** (e.g. ⌃⌥Space): `keyCode` is the key, with
-///   `modifiers`.
-struct KeyBinding: Codable, Equatable {
-    var keyCode: Int
-    var modifiers: [String]   // any of: "command", "option", "control", "shift", "function"
-
-    /// Control + Shift — default hold-to-talk. A pure-modifier combo, so it
-    /// never inserts a character into the focused field, and (unlike fn/Globe)
-    /// both modifiers are reliably delivered to the event tap.
-    static let controlShift = KeyBinding(keyCode: -1, modifiers: ["control", "shift"])
-    /// fn + Shift — alternative combo; note the Globe/fn key is intercepted by
-    /// the system on some Macs and may not reach the event tap.
-    static let fnShift = KeyBinding(keyCode: -1, modifiers: ["function", "shift"])
-    /// Right Option (⌥) — alternative single-modifier hold.
-    static let rightOption = KeyBinding(keyCode: 61, modifiers: [])
-    /// ⌃⌥Space — default toggle key (wired in Phase 2).
-    static let controlOptionSpace = KeyBinding(keyCode: 49, modifiers: ["control", "option"])
-}
-
 /// User-editable configuration, persisted as JSON at `Paths.configFile`.
 ///
 /// Decoding is tolerant: any missing key falls back to its default, so a

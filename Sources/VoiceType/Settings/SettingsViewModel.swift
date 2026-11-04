@@ -157,9 +157,9 @@ final class SettingsViewModel: ObservableObject {
     var modelEntries: [ModelCatalogEntry] { ModelCatalog.entries(presentFilenames: presentModelFilenames()) }
 
     /// Human-readable label for the current hold binding (e.g. "⌃⇧").
-    var holdDescription: String   { HotkeyDescription.describe(holdBinding) }
+    var holdDescription: String   { holdBinding.description }
     /// Human-readable label for the current toggle binding (e.g. "⌃⌥Space").
-    var toggleDescription: String { HotkeyDescription.describe(toggleBinding) }
+    var toggleDescription: String { toggleBinding.description }
 
     // MARK: - Hotkey intent methods (Task 4b)
 

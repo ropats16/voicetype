@@ -1,8 +1,8 @@
 /// Pure, unit-testable clipboard-restore coordination split out of
 /// `TextInserter` so the pending/superseding decision can be exercised with
 /// synthetic call sequences — no real `NSPasteboard` or `Timer` required.
-/// Mirrors how `Sources/VoiceType/Hotkeys/HotkeyMatcher.swift` extracts pure
-/// edge-detection logic out of `HotkeyManager` for the same reason.
+/// Mirrors how `Sources/VoiceType/Hotkeys/KeyBinding.swift` keeps pure
+/// edge-detection logic out of the `HotkeyManager` tap adapter for the same reason.
 ///
 /// A burst of overlapping `insert()` calls (e.g. two dictations in quick
 /// succession) must collapse to exactly one correct restore — of the

@@ -192,6 +192,11 @@ Other good no-character options (edit the `modifiers` list):
 - `["function", "shift"]` → fn+Shift *(note: the Globe/fn key is ignored on some Macs)*
 - A single key: `{ "keyCode": 61, "modifiers": [] }` → hold **Right Option**
 
+Modifier names are case-insensitive and accept aliases: `control`/`ctrl`,
+`option`/`alt`, `shift`, `command`/`cmd`, `function`/`fn`/`globe`. Single-key
+holds work with the sided modifiers: Left/Right ⌃ (59/62), ⌥ (58/61), ⇧ (56/60),
+⌘ (55/54). Easiest of all: Settings → Hotkeys → Record.
+
 **Change the toggle key.** `toggle` is the press-to-start / press-to-stop hotkey.
 Unlike `hold`, it fires on a single press, so it usually pairs a normal key with
 modifiers. The default is ⌃⌥Space:

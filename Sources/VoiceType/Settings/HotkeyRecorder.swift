@@ -22,11 +22,8 @@ final class HotkeyRecorder: ObservableObject {
     /// `nonisolated(unsafe)` so `deinit` (non-isolated in Swift 6) can access
     /// it as a last-resort safety net; in practice it is nil by then.
     nonisolated(unsafe) private var monitor: Any?
-    /// Peak set of modifier names seen during the current capture session.
-    private var peakModifierSet: Set<String> = []
-    /// Key code of the most recent `.flagsChanged` event (tracks which specific
-    /// modifier key was pressed, e.g. Left vs Right Option).
-    private var lastModifierKeyCode: Int?
+    /// The capture session; all capture-to-binding rules live in `KeyBinding.Capture`.
+    private var session = KeyBinding.Capture()
 
     // MARK: - Public API
 
@@ -36,8 +33,7 @@ final class HotkeyRecorder: ObservableObject {
     func startCapture(for target: HotkeyTarget, vm: SettingsViewModel) {
         cancelCapture(vm: vm)           // idempotent if no capture in progress
         captureTarget = target
-        peakModifierSet = []
-        lastModifierKeyCode = nil
+        session = KeyBinding.Capture()
         vm.beginHotkeyCapture()         // suspend global tap + set isCapturing
 
         // The handler is @MainActor — same isolation as this class.
@@ -72,61 +68,17 @@ final class HotkeyRecorder: ObservableObject {
     /// event (prevents it reaching the window's responder chain); returns the
     /// event unchanged to pass it through.
     private func handle(event: NSEvent, vm: SettingsViewModel) -> NSEvent? {
-        guard captureTarget != nil else { return event }
-
-        switch event.type {
-        case .keyDown where !event.isARepeat:
-            let kc = Int(event.keyCode)
-            if kc == 53 {                                   // Esc → cancel
-                finishCapture(binding: nil, vm: vm)
-                return nil
-            }
-            if !HotkeyManager.isModifierKeyCode(kc) {       // regular key → form 3
-                let binding = HotkeyCapture.regularKeyBinding(
-                    keyCode: kc, flags: event.modifierFlags)
-                finishCapture(binding: binding, vm: vm)
-                return nil
-            }
-
-        case .flagsChanged:
-            let names = HotkeyCapture.modifierNames(from: event.modifierFlags)
-            let kc = Int(event.keyCode)
-            if !names.isEmpty {
-                // On a release-of-one-while-others-remain the held set doesn't
-                // grow, so lastModifierKeyCode must NOT be overwritten with the
-                // released key. Only update lastModifierKeyCode when a modifier
-                // key went DOWN (the held set grew).
-                let newSet = Set(names)
-                if newSet.count > peakModifierSet.count {
-                    lastModifierKeyCode = kc     // a modifier key went DOWN (the held set grew)
-                }
-                peakModifierSet.formUnion(newSet)
-            } else if !peakModifierSet.isEmpty {
-                // All modifiers released after a non-empty peak → attempt commit.
-                let peakNames = canonicalize(peakModifierSet)
-                if let binding = HotkeyCapture.modifierOnlyBinding(
-                    names: peakNames, lastModifierKeyCode: lastModifierKeyCode) {
-                    finishCapture(binding: binding, vm: vm)
-                    return nil
-                }
-                // modifierOnlyBinding returned nil (e.g. single modifier with no
-                // tracked key code) — reset and keep waiting for another attempt.
-                peakModifierSet = []
-                lastModifierKeyCode = nil
-            }
-
-        default:
-            break
+        guard captureTarget != nil, let keyEvent = KeyEvent(event) else { return event }
+        switch session.handle(keyEvent) {
+        case .pending:
+            return event
+        case .cancelled:
+            finishCapture(binding: nil, vm: vm)
+            return nil
+        case .captured(let binding):
+            finishCapture(binding: binding, vm: vm)
+            return nil
         }
-        return event
-    }
-
-    /// Re-orders a set of modifier names into canonical order
-    /// (control, option, shift, command, function), matching `HotkeyCapture.modifierNames`.
-    private static let modifierOrder = ["control", "option", "shift", "command", "function"]
-
-    private func canonicalize(_ names: Set<String>) -> [String] {
-        Self.modifierOrder.filter { names.contains($0) }
     }
 
     deinit {
@@ -134,5 +86,21 @@ final class HotkeyRecorder: ObservableObject {
         // SettingsView.onDisappear before this object is deallocated. The guard
         // below is a last-resort safety net in case the view lifecycle diverges.
         if let m = monitor { NSEvent.removeMonitor(m) }
+    }
+}
+
+private extension KeyEvent {
+    /// Decodes the event types the capture monitor listens for. `isARepeat` is
+    /// only read for key events: AppKit raises on it for `.flagsChanged`.
+    init?(_ event: NSEvent) {
+        let flags = CGEventFlags(rawValue: UInt64(event.modifierFlags.rawValue))
+        switch event.type {
+        case .keyDown:
+            self.init(kind: .keyDown, keyCode: Int(event.keyCode), flags: flags, isAutorepeat: event.isARepeat)
+        case .flagsChanged:
+            self.init(kind: .flagsChanged, keyCode: Int(event.keyCode), flags: flags)
+        default:
+            return nil
+        }
     }
 }

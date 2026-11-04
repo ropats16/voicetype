@@ -333,12 +333,11 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testHoldDescriptionMatchesDefaultControlShift() {
         let vm = makeVM()
-        // .controlShift → keyCode -1, ["control","shift"] → "⌃ ⇧" or similar via HotkeyDescription
-        XCTAssertFalse(vm.holdDescription.isEmpty)
+        XCTAssertEqual(vm.holdDescription, "⌃ ⇧")
     }
 
     func testToggleDescriptionMatchesDefaultControlOptionSpace() {
         let vm = makeVM()
-        XCTAssertFalse(vm.toggleDescription.isEmpty)
+        XCTAssertEqual(vm.toggleDescription, "⌃⌥Space")
     }
 }
