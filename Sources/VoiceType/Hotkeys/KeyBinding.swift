@@ -108,6 +108,26 @@ struct KeyBinding: Codable, Equatable {
         modifierKeys.first { $0.keyCode == keyCode }
     }
 
+    /// Which of the three forms this binding takes; the only place that reads
+    /// the `keyCode < 0` / empty-`modifiers` encoding.
+    private enum Form {
+        case unmatchable
+        case combo
+        case singleModifier(ModifierKey)
+        case key
+    }
+
+    private var form: Form {
+        if keyCode < 0 { return modifiers.isEmpty ? .unmatchable : .combo }
+        if modifiers.isEmpty, let key = Self.modifierKey(keyCode) { return .singleModifier(key) }
+        return .key
+    }
+
+    /// A pure-modifier combo binding.
+    private static func combo(_ modifiers: [Modifier]) -> KeyBinding {
+        KeyBinding(keyCode: -1, modifiers: modifiers.map(\.rawValue))
+    }
+
     /// The recognised modifiers, deduplicated, in canonical order.
     private var resolvedModifiers: [Modifier] {
         let set = Set(modifiers.compactMap(Modifier.init(name:)))
@@ -128,33 +148,37 @@ struct KeyBinding: Codable, Equatable {
     /// - **Single modifier**: only a `.flagsChanged` for that key code is
     ///   relevant; satisfied iff the key's device bit is set.
     /// - **Regular key**: a fresh `.keyDown` for the key code is satisfied iff
-    ///   every required modifier is held (the ⌃⌥Space fix); its `.keyUp` is not
-    ///   satisfied; an autorepeat `.keyDown` is irrelevant, so a still-held key
-    ///   can't read as a new press.
+    ///   every required modifier is held, so ⌃Space can't fire a ⌃⌥Space
+    ///   binding; its `.keyUp` is not satisfied; an autorepeat `.keyDown` is
+    ///   irrelevant, so a still-held key can't read as a new press.
     func satisfaction(by event: KeyEvent) -> Bool? {
-        if keyCode < 0, !modifiers.isEmpty {
+        switch form {
+        case .unmatchable:
+            return nil
+        case .combo:
             guard event.kind == .flagsChanged else { return nil }
             let required = requiredFlags
             return !required.isEmpty && event.flags.contains(required)
-        }
-
-        if modifiers.isEmpty, let key = Self.modifierKey(keyCode) {
+        case .singleModifier(let key):
             guard event.kind == .flagsChanged, event.keyCode == keyCode else { return nil }
             return event.flags.rawValue & key.deviceBit != 0
-        }
-
-        guard event.keyCode == keyCode else { return nil }
-        switch event.kind {
-        case .keyDown: return event.isAutorepeat ? nil : event.flags.contains(requiredFlags)
-        case .keyUp: return false
-        case .flagsChanged: return nil
+        case .key:
+            guard event.keyCode == keyCode else { return nil }
+            switch event.kind {
+            case .keyDown: return event.isAutorepeat ? nil : event.flags.contains(requiredFlags)
+            case .keyUp: return false
+            case .flagsChanged: return nil
+            }
         }
     }
 
     // MARK: - Validation
 
     /// No main key and no modifiers: can never be triggered.
-    var isUnmatchable: Bool { keyCode < 0 && modifiers.isEmpty }
+    var isUnmatchable: Bool {
+        if case .unmatchable = form { return true }
+        return false
+    }
 
     /// Modifier names that aren't recognised (and so are ignored at runtime).
     var unknownModifiers: [String] { modifiers.filter { Modifier(name: $0) == nil } }
@@ -177,11 +201,11 @@ extension KeyBinding: CustomStringConvertible {
     /// Menu/Settings label: "⌃ ⇧", "Right ⌥", "⌃⌥Space".
     var description: String {
         let symbols = resolvedModifiers.map(\.symbol)
-        if keyCode < 0 { return symbols.joined(separator: " ") }
-        if modifiers.isEmpty, let key = Self.modifierKey(keyCode) {
-            return "\(key.side) \(key.modifier.symbol)"
+        switch form {
+        case .unmatchable, .combo: return symbols.joined(separator: " ")
+        case .singleModifier(let key): return "\(key.side) \(key.modifier.symbol)"
+        case .key: return symbols.joined() + Self.keyName(keyCode)
         }
-        return symbols.joined() + Self.keyName(keyCode)
     }
 
     private static func keyName(_ keyCode: Int) -> String {
@@ -235,86 +259,11 @@ extension KeyBinding {
         }
 
         private func commitModifiers() -> KeyBinding? {
-            if peak.count >= 2 {
-                return KeyBinding(keyCode: -1,
-                                  modifiers: Modifier.allCases.filter(peak.contains).map(\.rawValue))
-            }
+            if peak.count >= 2 { return KeyBinding.combo(Modifier.allCases.filter(peak.contains)) }
             if let keyCode = lastModifierKeyCode, KeyBinding.modifierKey(keyCode) != nil {
                 return KeyBinding(keyCode: keyCode, modifiers: [])
             }
             return nil
         }
-    }
-}
-
-// MARK: - Events and edges
-
-/// A decoded keyboard event, as both adapters (the CGEvent tap and the Settings
-/// `NSEvent` monitor) see it. `flags` uses `CGEventFlags` bits, which
-/// `NSEvent.ModifierFlags` shares, including the low device-dependent bits.
-struct KeyEvent: Equatable {
-    enum Kind { case keyDown, keyUp, flagsChanged }
-
-    var kind: Kind
-    var keyCode: Int
-    var flags: CGEventFlags
-    var isAutorepeat = false
-}
-
-/// What the hold, toggle and cancel bindings mean for the dictation flow.
-enum HotkeyAction: Equatable { case holdStart, holdStop, togglePress, cancel }
-
-/// Press/release edge state for the configured bindings. Hold fires on both
-/// edges, toggle on the press edge only (once per physical press, whatever the
-/// autorepeat), cancel on a fresh key-down of `cancelKeyCode`.
-///
-/// Not thread-safe: owned by whichever thread feeds it (the tap thread).
-struct HotkeyEdges {
-    let hold: KeyBinding
-    let toggle: KeyBinding
-    let cancelKeyCode: Int
-
-    private var holdActive = false
-    private var toggleActive = false
-
-    init(hold: KeyBinding, toggle: KeyBinding, cancelKeyCode: Int) {
-        self.hold = hold
-        self.toggle = toggle
-        self.cancelKeyCode = cancelKeyCode
-    }
-
-    mutating func handle(_ event: KeyEvent) -> [HotkeyAction] {
-        var actions: [HotkeyAction] = []
-        switch Self.edge(&holdActive, hold.satisfaction(by: event)) {
-        case true?: actions.append(.holdStart)
-        case false?: actions.append(.holdStop)
-        case nil: break
-        }
-        if Self.edge(&toggleActive, toggle.satisfaction(by: event)) == true {
-            actions.append(.togglePress)
-        }
-        // No edge state for cancel: the autorepeat guard prevents repeats.
-        if event.kind == .keyDown, event.keyCode == cancelKeyCode, !event.isAutorepeat {
-            actions.append(.cancel)
-        }
-        return actions
-    }
-
-    /// Call when events may have been dropped (the tap was disabled, or is
-    /// being torn down). Clears all edge state; if a hold was active its
-    /// release may have been lost, so a synthetic `.holdStop` is returned
-    /// rather than letting the recording run to the cap.
-    mutating func reset() -> [HotkeyAction] {
-        defer { holdActive = false; toggleActive = false }
-        return holdActive ? [.holdStop] : []
-    }
-
-    /// Folds a satisfaction reading into `active`: `true` on a press edge,
-    /// `false` on a release edge, `nil` when nothing changed or the reading is
-    /// irrelevant.
-    private static func edge(_ active: inout Bool, _ satisfied: Bool?) -> Bool? {
-        guard let satisfied, satisfied != active else { return nil }
-        active = satisfied
-        return satisfied
     }
 }

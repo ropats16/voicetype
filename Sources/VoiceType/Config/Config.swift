@@ -22,7 +22,7 @@ struct Config: Codable {
             modelPath: Paths.defaultModelFile.path,
             hold: .controlShift,
             toggle: .controlOptionSpace,
-            cancelKeyCode: 53,
+            cancelKeyCode: KeyBinding.escapeKeyCode,
             maxRecordingSeconds: 600,
             trailingSpace: false,
             microphoneUID: nil,

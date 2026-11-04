@@ -21,7 +21,7 @@ enum ConfigValidator {
         if config.hold.isSameChord(as: config.toggle) {
             issues.append(ConfigIssue(
                 severity: .error,
-                message: "`hold` and `toggle` are the same binding (\(config.hold))); both modes would trigger on the same key."))
+                message: "`hold` and `toggle` are the same binding (\(config.hold)); both modes would trigger on the same key."))
         }
 
         // error — a binding with no key and no modifiers can never match.

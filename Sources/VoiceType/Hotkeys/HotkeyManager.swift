@@ -14,40 +14,48 @@ import CoreGraphics
 ///
 /// Thread rules: `start()`, `stop()` and the callbacks are main-thread only.
 /// Edge state is confined to the tap thread; actions reach main via
-/// `DispatchQueue.main.async`, in order. Nothing is locked.
+/// `DispatchQueue.main.async`, in order. Nothing is locked. Releasing the
+/// manager stops its tap.
 final class HotkeyManager {
-    let hold: KeyBinding
-    let toggle: KeyBinding
-    /// Key code (default Esc = 53) that cancels an in-progress recording.
-    let cancelKeyCode: Int
-
     /// Fired on the main thread.
-    var onHoldStart: (() -> Void)?
-    var onHoldStop: (() -> Void)?
-    var onTogglePress: (() -> Void)?
+    var onHoldStart: (() -> Void)? {
+        get { delivery.onHoldStart } set { delivery.onHoldStart = newValue }
+    }
+    var onHoldStop: (() -> Void)? {
+        get { delivery.onHoldStop } set { delivery.onHoldStop = newValue }
+    }
+    var onTogglePress: (() -> Void)? {
+        get { delivery.onTogglePress } set { delivery.onTogglePress = newValue }
+    }
     /// Fired on the main thread when the cancel key is pressed. Fired
     /// unconditionally — the manager doesn't track recording state, so the
     /// receiver decides whether there is anything to cancel.
-    var onCancel: (() -> Void)?
+    var onCancel: (() -> Void)? {
+        get { delivery.onCancel } set { delivery.onCancel = newValue }
+    }
 
+    /// Fresh edge state, copied into each tap.
+    private let edges: HotkeyEdges
+    private let delivery = HotkeyDelivery()
     private var tap: EventTapThread?
 
     init(hold: KeyBinding, toggle: KeyBinding, cancelKeyCode: Int) {
-        self.hold = hold
-        self.toggle = toggle
-        self.cancelKeyCode = cancelKeyCode
+        edges = HotkeyEdges(hold: hold, toggle: toggle, cancelKeyCode: cancelKeyCode)
     }
+
+    deinit { stop() }
 
     /// Installs the event tap. Returns false if creation failed (almost always
     /// missing Accessibility permission).
     @discardableResult
     func start() -> Bool {
         guard tap == nil else { return true }
-        let edges = HotkeyEdges(hold: hold, toggle: toggle, cancelKeyCode: cancelKeyCode)
-        // Strong capture: a synthetic release sent while stopping must still
-        // arrive after the owner has dropped this manager. stop() breaks the cycle.
+        // Captures the delivery, not self: no cycle through the tap, and a
+        // synthetic release sent while stopping still lands after the owner
+        // has dropped this manager.
+        let delivery = delivery, generation = delivery.generation
         guard let tap = EventTapThread(edges: edges, deliver: { actions in
-            DispatchQueue.main.async { self.deliver(actions) }
+            DispatchQueue.main.async { delivery.deliver(actions, generation: generation) }
         }) else {
             Log.error("Failed to create event tap (Accessibility not granted?)")
             return false
@@ -59,12 +67,36 @@ final class HotkeyManager {
 
     /// Removes the tap. If a hold is active, its stop is still delivered.
     func stop() {
-        tap?.stop()
-        tap = nil
+        guard let tap else { return }
+        delivery.invalidate()
+        tap.stop()
+        self.tap = nil
     }
+}
 
-    private func deliver(_ actions: [HotkeyAction]) {
-        for action in actions {
+/// The main-thread end of the tap → main hop. Main-thread only.
+///
+/// `stop()` is asynchronous — the tap is torn down on its own thread — so a
+/// stopped tap can still flush events it read just before. Delivering those
+/// presses next to the replacement tap's would double-fire (a toggle press
+/// that starts then immediately stops a recording), so actions from an older
+/// generation are dropped. Releases always pass: a hold stop is harmless when
+/// idle, and may be the synthetic release from teardown.
+final class HotkeyDelivery {
+    var onHoldStart: (() -> Void)?
+    var onHoldStop: (() -> Void)?
+    var onTogglePress: (() -> Void)?
+    var onCancel: (() -> Void)?
+
+    /// The tap generation whose actions are live.
+    private(set) var generation = 0
+
+    /// Retires the current tap's actions (all but releases).
+    func invalidate() { generation += 1 }
+
+    func deliver(_ actions: [HotkeyAction], generation: Int) {
+        let isLive = generation == self.generation
+        for action in actions where isLive || action == .holdStop {
             switch action {
             case .holdStart: onHoldStart?()
             case .holdStop: onHoldStop?()
@@ -123,6 +155,7 @@ private final class EventTapThread {
     /// releasing an active hold first, then ends the thread.
     func stop() {
         guard let runLoop else { return }
+        self.runLoop = nil   // a second stop is a no-op
         CFRunLoopPerformBlock(runLoop, CFRunLoopMode.commonModes.rawValue) { [self] in
             if let port {
                 CGEvent.tapEnable(tap: port, enable: false)

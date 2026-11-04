@@ -47,6 +47,13 @@ final class ConfigValidationTests: XCTestCase {
                        "Modifier order must not matter when comparing bindings")
     }
 
+    func testHoldEqualsToggleMessageNamesTheBinding() {
+        var config = Config.defaults
+        config.toggle = config.hold
+        XCTAssertEqual(errors(config).first?.message,
+                       "`hold` and `toggle` are the same binding (⌃ ⇧); both modes would trigger on the same key.")
+    }
+
     func testHoldEqualsToggleViaAliasesIsError() {
         var config = Config.defaults
         config.hold = KeyBinding(keyCode: -1, modifiers: ["control", "shift"])
