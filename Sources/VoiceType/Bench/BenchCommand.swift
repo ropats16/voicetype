@@ -5,34 +5,51 @@ import Foundation
 /// Benchmarks a speech engine over the fixtures in a manifest (see
 /// `scripts/fetch_bench_fixtures.sh`), through `TranscriptionEngine` exactly as
 /// the app uses it. Prints a table to stdout and writes the full JSON report.
-/// No network, no UI, no permissions.
+/// No network, no UI, no permissions, and nothing written but the report.
 enum BenchCommand {
-    static let usage = """
-    usage: VoiceType --bench --model <file> [--engine <id>] [--manifest <manifest.tsv>]
-                     [--runs <n>] [--only short|long] [--json <out.json>] [--git-sha <sha>]
+    static func usage(_ config: Config) -> String {
+        """
+        usage: VoiceType --bench --model <file> [--engine <id>] [--manifest <manifest.tsv>]
+                         [--runs <n>] [--only short|long] [--language <code>] [--threads <n>]
+                         [--json <out.json>] [--git-sha <sha>]
 
-      --model     model file for the engine (e.g. ggml-tiny.en.bin)
-      --engine    engine to bench: \(BenchEngine.all.map(\.id).joined(separator: ", ")) (default: whisper)
-      --manifest  fixture list (default: .bench/fixtures/manifest.tsv)
-      --runs      passes over the short clips (default: 3)
-      --only      bench just the short or just the long clips
-      --json      where to write the report
-                  (default: .bench/results/<time>-<engine>-<model>.json)
-      --git-sha   commit to record (default: from git, if run inside the repo)
+          --model     model file (or directory) for the engine (e.g. ggml-tiny.en.bin)
+          --engine    engine to bench: \(engineIDs) (default: whisper)
+          --manifest  fixture list (default: .bench/fixtures/manifest.tsv)
+          --runs      passes over the short clips (default: 3)
+          --only      bench just the short or just the long clips
+          --language  transcription language (default: config.json's, now "\(config.language)")
+          --threads   engine threads, 0 = auto (default: config.json's, now \(config.threads))
+          --json      where to write the report
+                      (default: .bench/results/<time>-<engine>-<model>.json)
+          --git-sha   commit to record, e.g. --git-sha "$(git describe --always --dirty)"
 
-    """
+        """
+    }
+
+    private static var engineIDs: String {
+        BenchEngine.all(.init(language: "en", threads: 0)).map(\.id).joined(separator: ", ")
+    }
 
     static func run(arguments: [String]) -> Int32 {
         func value(_ flag: String) -> String? { CommandLineSupport.value(flag, in: arguments) }
-        guard let model = value("--model") else { return fail(usage, code: 2) }
+        let config = readConfig()
+        guard let model = value("--model") else { return fail(usage(config), code: 2) }
+
+        let threads = value("--threads").map { Int($0) ?? -1 } ?? config.threads
+        guard threads >= 0 else { return fail("--threads must be a non-negative integer", code: 2) }
+        let options = BenchEngine.Options(language: value("--language") ?? config.language, threads: threads)
         let engineID = value("--engine") ?? "whisper"
-        guard let engine = BenchEngine.named(engineID) else {
-            return fail("unknown engine '\(engineID)'\n\n\(usage)", code: 2)
+        guard let engine = BenchEngine.named(engineID, options) else {
+            return fail("unknown engine '\(engineID)'\n\n\(usage(config))", code: 2)
         }
         let runs = value("--runs").map { Int($0) ?? 0 } ?? 3
         guard runs > 0 else { return fail("--runs must be a positive integer", code: 2) }
-        let only = value("--only").flatMap(BenchClip.Kind.init(rawValue:))
-        if value("--only") != nil && only == nil { return fail("--only must be short or long", code: 2) }
+        var only: BenchClip.Kind?
+        if let raw = value("--only") {
+            guard let kind = BenchClip.Kind(rawValue: raw) else { return fail("--only must be short or long", code: 2) }
+            only = kind
+        }
         let manifestURL = URL(fileURLWithPath: value("--manifest") ?? ".bench/fixtures/manifest.tsv")
         let modelURL = URL(fileURLWithPath: model)
 
@@ -47,21 +64,18 @@ enum BenchCommand {
                           samples: try CommandLineSupport.samples(fromAudioFile: entry.file))
             }
 
-            let machine = MachineInfo.current()
-            log("Benching \(engine.id) with \(modelURL.lastPathComponent) on \(machine.chip)"
-                + " (\(clips.filter { $0.kind == .short }.count) short × \(runs), "
-                + "\(clips.filter { $0.kind == .long }.count) long)")
+            let thermalAtStart = MachineInfo.thermalState()
+            log("Benching \(engine.id) with \(modelURL.lastPathComponent) (\(clips.of(.short).count) short × \(runs), "
+                + "\(clips.of(.long).count) long; language \(options.language), threads \(options.threads))")
             let runner = BenchRunner(engine: engine, modelPath: modelURL.path, shortRuns: runs)
             let results = try CommandLineSupport.blocking { try await runner.run(clips) }
 
-            let modelBytes = (try? FileManager.default.attributesOfItem(atPath: modelURL.path)[.size] as? NSNumber)?
-                .uint64Value ?? 0
             let report = BenchReport(
                 createdAt: ISO8601DateFormatter().string(from: Date()),
-                machine: machine,
-                engine: .init(id: engine.id, modelFile: modelURL.lastPathComponent, modelBytes: modelBytes),
-                build: .init(configuration: buildConfiguration, gitSHA: value("--git-sha") ?? MachineInfo.gitSHA()),
-                settings: .init(shortRuns: runs),
+                machine: MachineInfo.current(thermalAtStart: thermalAtStart),
+                engine: .init(id: engine.id, modelFile: modelURL.lastPathComponent, modelBytes: diskSize(of: modelURL)),
+                build: .init(configuration: buildConfiguration, gitSHA: value("--git-sha")),
+                settings: .init(shortRuns: runs, language: options.language, threads: options.threads),
                 results: results)
 
             let jsonURL = URL(fileURLWithPath: value("--json") ?? defaultJSONPath(engine: engine.id, model: modelURL))
@@ -74,6 +88,32 @@ enum BenchCommand {
         } catch {
             return fail("bench failed: \(error.localizedDescription)", code: 1)
         }
+    }
+
+    /// The user's config, read-only (unlike `ConfigStore`, never writes
+    /// defaults); defaults if there's none or it doesn't decode.
+    private static func readConfig() -> Config {
+        guard let data = try? Data(contentsOf: Paths.configFile),
+              let config = try? JSONDecoder().decode(Config.self, from: data) else { return .defaults }
+        return config
+    }
+
+    /// A file's size, or the total of a directory's files (e.g. a CoreML
+    /// `.mlmodelc`); nil if nothing is there.
+    static func diskSize(of url: URL) -> UInt64? {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return nil }
+        guard isDirectory.boolValue else {
+            return (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { UInt64($0) }
+        }
+        let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey])
+        var total: UInt64 = 0
+        while let file = files?.nextObject() as? URL {
+            guard let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+                  values.isRegularFile == true else { continue }
+            total += UInt64(values.fileSize ?? 0)
+        }
+        return total
     }
 
     private static var buildConfiguration: String {
@@ -104,15 +144,7 @@ enum BenchCommand {
 /// What the report records about the Mac it ran on, so runs compare across
 /// machines.
 enum MachineInfo {
-    static func current() -> BenchReport.Machine {
-        let thermal: String
-        switch ProcessInfo.processInfo.thermalState {
-        case .nominal: thermal = "nominal"
-        case .fair: thermal = "fair"
-        case .serious: thermal = "serious"
-        case .critical: thermal = "critical"
-        @unknown default: thermal = "unknown"
-        }
+    static func current(thermalAtStart: String) -> BenchReport.Machine {
         let os = ProcessInfo.processInfo.operatingSystemVersion
         return BenchReport.Machine(
             chip: sysctlString("machdep.cpu.brand_string") ?? "unknown",
@@ -122,29 +154,18 @@ enum MachineInfo {
             efficiencyCores: sysctlInt("hw.perflevel1.physicalcpu"),
             osVersion: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
                 + (sysctlString("kern.osversion").map { " (\($0))" } ?? ""),
-            thermalState: thermal)
+            thermalStateAtStart: thermalAtStart,
+            thermalStateAtEnd: thermalState())
     }
 
-    /// The current directory's git commit, with "-dirty" for uncommitted
-    /// tracked changes; nil outside a repo or without git.
-    static func gitSHA() -> String? {
-        guard let sha = git(["rev-parse", "--short=12", "HEAD"]), !sha.isEmpty else { return nil }
-        let dirty = !(git(["status", "--porcelain", "--untracked-files=no"]) ?? "").isEmpty
-        return sha + (dirty ? "-dirty" : "")
-    }
-
-    private static func git(_ args: [String]) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = args
-        let out = Pipe()
-        process.standardOutput = out
-        process.standardError = FileHandle.nullDevice
-        do { try process.run() } catch { return nil }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else { return nil }
-        return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    static func thermalState() -> String {
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal: return "nominal"
+        case .fair: return "fair"
+        case .serious: return "serious"
+        case .critical: return "critical"
+        @unknown default: return "unknown"
+        }
     }
 
     private static func sysctlString(_ name: String) -> String? {

@@ -2,32 +2,57 @@ import Foundation
 
 /// Reduces a transcript to the words WER compares: lowercase, punctuation
 /// stripped (apostrophes dropped, hyphens/dashes/slashes split words),
-/// whitespace collapsed, and digit runs spelled out ("21" → "twenty one") so a
-/// numeral in the hypothesis matches a reference that spells numbers out (as
-/// LibriSpeech does). Applied identically to reference and hypothesis.
+/// whitespace collapsed, and numbers spelled out the way LibriSpeech references
+/// read them, so a numeral in the hypothesis can match: "21" → "twenty one",
+/// four-digit years 1100–2099 year-style ("1961" → "nineteen sixty one", "2005"
+/// → "two thousand five", "2010" → "twenty ten"), "$5" → "five dollars", "5%"
+/// → "five percent". Applied identically to reference and hypothesis.
 enum TranscriptNormalizer {
     static func words(_ text: String) -> [String] {
+        // "$" and "%" become tokens of their own; a comma between digits is a
+        // thousands separator ("1,905"), kept as "_" so the number stays whole
+        // and reads as a quantity, never a year.
         var cleaned = ""
-        // Commas between digits are thousands separators ("1,905"); drop them
-        // so the number survives as one token.
         let chars = Array(text.lowercased())
         for (i, c) in chars.enumerated() {
             if c.isLetter || c.isNumber {
                 cleaned.append(c)
             } else if c == "," && i > 0 && i + 1 < chars.count && chars[i - 1].isNumber && chars[i + 1].isNumber {
-                continue
+                cleaned.append("_")
             } else if c == "'" || c == "’" || c == "‘" {
                 continue
+            } else if c == "$" || c == "%" {
+                cleaned += " \(c) "
             } else {
                 cleaned.append(" ")
             }
         }
-        return cleaned.split(separator: " ").flatMap { token -> [String] in
-            if token.allSatisfy(\.isASCIIDigit), let n = Int(token), n < 1_000_000_000 {
-                return spell(n)
+
+        var words: [String] = []
+        var dollars = false     // the previous token was "$"
+        for token in cleaned.split(separator: " ").map(String.init) {
+            defer { if token != "$" { dollars = false } }
+            if token == "$" { dollars = true; continue }
+            if token == "%" { words.append("percent"); continue }
+            let digits = token.replacingOccurrences(of: "_", with: "")
+            guard digits.allSatisfy(\.isASCIIDigit), let n = Int(digits), n < 1_000_000_000 else {
+                words.append(token)
+                continue
             }
-            return [String(token)]
+            let isYear = !dollars && token.count == 4 && (1100...2099).contains(n)
+            words += isYear ? year(n) : spell(n)
+            if dollars { words.append(n == 1 ? "dollar" : "dollars") }
         }
+        return words
+    }
+
+    /// "nineteen sixty one", "nineteen hundred", "nineteen oh five", "two
+    /// thousand five", "twenty ten".
+    private static func year(_ n: Int) -> [String] {
+        if (2000...2009).contains(n) { return spell(n) }
+        let (century, rest) = (n / 100, n % 100)
+        let tail = rest == 0 ? ["hundred"] : rest < 10 ? ["oh", ones[rest]] : spell(rest)
+        return spell(century) + tail
     }
 
     private static let ones = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",

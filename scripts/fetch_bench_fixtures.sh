@@ -30,8 +30,12 @@ TARBALL=""
 KEEP=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --dir) DIR="$2"; shift 2 ;;
-    --tarball) TARBALL="$2"; shift 2 ;;
+    --dir|--tarball)
+      if [[ $# -lt 2 ]] || [[ -z "$2" ]] || [[ "$2" == --* ]]; then
+        echo "error: $1 needs a path (see --help)" >&2; exit 2
+      fi
+      if [[ "$1" == --dir ]]; then DIR="$2"; else TARBALL="$2"; fi
+      shift 2 ;;
     --keep-download) KEEP=1; shift ;;
     -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "error: unknown argument '$1' (see --help)" >&2; exit 2 ;;
@@ -73,6 +77,9 @@ d8ec77050286ed7730fba879b9bfd9ebb36a31c4cb28cb1276b4fa3203605144  long/librispee
 "
 
 sha256() { shasum -a 256 "$1" | cut -d' ' -f1; }
+# Checks the fixtures in the current dir against the pins above (extra args go
+# to shasum, e.g. -s for silent).
+verify_pins() { printf '%s' "$EXPECTED_SHA256" | shasum -a 256 "$@" -c -; }
 
 if [[ ! -f "$JFK" ]]; then
   echo "error: $JFK not found — run: git submodule update --init --recursive" >&2
@@ -85,7 +92,7 @@ DIR="$(cd "$DIR" && pwd)"
 cd "$DIR"
 
 # Already fetched and intact? Nothing to do.
-if [[ -f manifest.tsv ]] && [[ -f SHA256SUMS ]] && shasum -a 256 -s -c SHA256SUMS 2>/dev/null; then
+if [[ -f manifest.tsv ]] && verify_pins -s 2>/dev/null; then
   echo "✓ Bench fixtures already present and verified in $DIR"
   exit 0
 fi
@@ -96,7 +103,13 @@ if [[ -z "$TARBALL" ]]; then
   TARBALL="$DIR/.download/test-clean.tar.gz"
   if [[ ! -f "$TARBALL" ]] || [[ "$(sha256 "$TARBALL")" != "$TARBALL_SHA256" ]]; then
     echo "Downloading LibriSpeech test-clean (~331 MiB) from $URL"
-    curl -L --fail -C - -o "$TARBALL" "$URL"
+    # Resume a partial download; if that fails (e.g. HTTP 416 on a full-size
+    # but corrupt file), start over once.
+    if ! curl -L --fail -C - -o "$TARBALL" "$URL"; then
+      echo "Resume failed; downloading from scratch" >&2
+      rm -f "$TARBALL"
+      curl -L --fail -o "$TARBALL" "$URL"
+    fi
   fi
 fi
 echo "Verifying $TARBALL"
@@ -121,7 +134,7 @@ tar -xzf "$TARBALL" -C "$WORK" "${members[@]}"
 LS="$WORK/LibriSpeech/test-clean"
 
 # --- Decode FLAC → WAV and write the manifest -----------------------------------
-rm -rf short long
+rm -rf short long SHA256SUMS
 mkdir -p short long
 cp "$WORK/LibriSpeech/LICENSE.TXT" LICENSE-LibriSpeech.txt
 
@@ -190,10 +203,8 @@ for id in "${long_ids[@]}"; do long_reference+="$(transcript "$id") "; done
 printf 'long\tlong/librispeech-long.wav\t%s\n' "${long_reference% }" >> manifest.tsv
 
 # --- Verify every fixture against the pins ---------------------------------------
-printf '%s' "$EXPECTED_SHA256" > SHA256SUMS
-if ! shasum -a 256 -c SHA256SUMS; then
+if ! verify_pins; then
   echo "error: a generated fixture doesn't match its pinned SHA-256 (see above)" >&2
-  rm -f SHA256SUMS
   exit 1
 fi
 

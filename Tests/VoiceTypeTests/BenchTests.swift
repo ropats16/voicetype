@@ -177,11 +177,11 @@ final class BenchTests: XCTestCase {
         let f = fixture()
         let results = try await f.runner.run(f.clips)
 
-        XCTAssertEqual(results.short.clips[0].hypothesis, "The cat sat.", "Hypothesis is trimmed")
-        XCTAssertEqual(results.short.clips[0].wer.errors, 0)
-        XCTAssertEqual(results.short.clips[1].wer, WordErrorRate(substitutions: 1, deletions: 0, insertions: 0, referenceWords: 3))
+        XCTAssertEqual(results.short.clips[0].transcript.hypothesis, "The cat sat.", "Hypothesis is trimmed")
+        XCTAssertEqual(results.short.clips[0].transcript.wer.errors, 0)
+        XCTAssertEqual(results.short.clips[1].transcript.wer, WordErrorRate(substitutions: 1, deletions: 0, insertions: 0, referenceWords: 3))
         XCTAssertEqual(results.short.wer, WordErrorRate(substitutions: 1, deletions: 0, insertions: 0, referenceWords: 6))
-        XCTAssertEqual(results.long.clips[0].wer.deletions, 1)
+        XCTAssertEqual(results.long.clips[0].transcript.wer.deletions, 1)
     }
 
     func testLongClipReportsRealTimeFactor() async throws {
@@ -238,26 +238,87 @@ final class BenchTests: XCTestCase {
         }
     }
 
+    func testMemorySamplingStaysOutsideTheTimedWindow() async throws {
+        // Every memory read costs a fake second; latencies must not see any.
+        let clock = FakeClock()
+        let adapter = FakeAdapter(clock: clock, answers: [:])
+        var runner = BenchRunner(engine: BenchEngine(id: "fake") { _ in adapter }, modelPath: modelURL.path, shortRuns: 2)
+        runner.clock = clock.now
+        runner.memorySampleInterval = 3600     // timer off: only the deterministic samples
+        runner.memory = {
+            clock.advance(1)
+            return MemorySnapshot(footprintBytes: 1, lifetimePeakBytes: 1)
+        }
+
+        let results = try await runner.run([clip("a", .short, seconds: 2, reference: "x"),
+                                            clip("book", .long, seconds: 60, reference: "x")])
+
+        XCTAssertEqual(results.short.clips[0].latenciesSeconds.count, 2)
+        for latency in results.short.clips[0].latenciesSeconds { XCTAssertEqual(latency, 0.2, accuracy: 1e-9) }
+        XCTAssertEqual(results.long.clips[0].processingSeconds, 6, accuracy: 1e-9)
+        XCTAssertEqual(results.load.totalSeconds, 0.1, accuracy: 1e-9)
+    }
+
     func testEveryRegisteredEngineHasAUniqueID() {
-        let ids = BenchEngine.all.map(\.id)
+        let ids = BenchEngine.all(.init(language: "en", threads: 0)).map(\.id)
         XCTAssertTrue(ids.contains("whisper"))
         XCTAssertEqual(Set(ids).count, ids.count)
     }
 
+    // MARK: - Model size
+
+    func testModelSizeIsAFilesSizeOrADirectorysTotalOrNil() throws {
+        XCTAssertEqual(BenchCommand.diskSize(of: modelURL), 1234)
+        XCTAssertNil(BenchCommand.diskSize(of: URL(fileURLWithPath: "/nonexistent/model.bin")))
+
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("bench-\(UUID().uuidString).mlmodelc")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent("weights"), withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: dir.appendingPathComponent("model.mil").path, contents: Data(count: 100))
+        FileManager.default.createFile(atPath: dir.appendingPathComponent("weights/weight.bin").path, contents: Data(count: 900))
+        XCTAssertEqual(BenchCommand.diskSize(of: dir), 1000)
+    }
+
     // MARK: - Output
 
-    private func sampleReport() async throws -> BenchReport {
-        let f = fixture(memory: { MemorySnapshot(footprintBytes: 50_000_000, lifetimePeakBytes: 300_000_000) })
+    private func sampleReport(memory: MemorySnapshot? = MemorySnapshot(footprintBytes: 50_000_000,
+                                                                       lifetimePeakBytes: 300_000_000),
+                              gitSHA: String? = "abc1234", modelBytes: UInt64? = 1234,
+                              cores: Int? = 8) async throws -> BenchReport {
+        let f = fixture(memory: { memory })
         let results = try await f.runner.run(f.clips)
         return BenchReport(
             createdAt: "2026-11-04T12:00:00Z",
             machine: .init(chip: "Apple M2 Pro", model: "Mac14,10", memoryBytes: 32 << 30,
-                           performanceCores: 8, efficiencyCores: 4, osVersion: "Version 15.1 (Build 24B83)",
-                           thermalState: "nominal"),
-            engine: .init(id: "fake", modelFile: "ggml-tiny.en.bin", modelBytes: 1234),
-            build: .init(configuration: "release", gitSHA: "abc1234"),
-            settings: .init(shortRuns: 2),
+                           performanceCores: cores, efficiencyCores: cores.map { $0 / 2 },
+                           osVersion: "15.1 (24B83)", thermalStateAtStart: "nominal", thermalStateAtEnd: "fair"),
+            engine: .init(id: "fake", modelFile: "ggml-tiny.en.bin", modelBytes: modelBytes),
+            build: .init(configuration: "release", gitSHA: gitSHA),
+            settings: .init(shortRuns: 2, language: "en", threads: 0),
             results: results)
+    }
+
+    func testAbsentValuesAreExplicitNullsSoTheKeySetNeverVaries() async throws {
+        let full = try await sampleReport()
+        let sparse = try await sampleReport(memory: nil, gitSHA: nil, modelBytes: nil, cores: nil)
+
+        func keyPaths(_ data: Data) throws -> Set<String> {
+            func walk(_ value: Any, _ path: String) -> [String] {
+                guard let object = value as? [String: Any] else { return [path] }
+                return object.flatMap { walk($1, path + "." + $0) }
+            }
+            return Set(walk(try JSONSerialization.jsonObject(with: data), ""))
+        }
+        let fullKeys = try keyPaths(full.jsonData())
+        let sparseKeys = try keyPaths(sparse.jsonData())
+        for path in [".results.memory", ".build.gitSHA", ".engine.modelBytes", ".machine.performanceCores"] {
+            XCTAssertTrue(sparseKeys.contains(path), "\(path) must be present as null")
+        }
+        XCTAssertTrue(fullKeys.isSuperset(of: sparseKeys.subtracting([".results.memory"])))
+        XCTAssertEqual(try JSONDecoder().decode(BenchReport.self, from: sparse.jsonData()), sparse, "Nulls round-trip")
+
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: sparse.jsonData()) as? [String: Any])
+        XCTAssertTrue((object["build"] as? [String: Any])?["gitSHA"] is NSNull)
     }
 
     func testJSONHasAStableVersionedSchema() async throws {
@@ -276,7 +337,7 @@ final class BenchTests: XCTestCase {
 
     func testTableShowsEveryClipAndTheHeadlineNumbers() async throws {
         let table = try await sampleReport().table()
-        for needle in ["fake", "ggml-tiny.en.bin", "Apple M2 Pro", "a", "b", "book",
+        for needle in ["fake", "ggml-tiny.en.bin", "Apple M2 Pro", "nominal → fair", "a", "b", "book",
                        "p50", "p90", "RTF", "WER", "16.7%", "0.100", "2.00s", "0.10s", "200 ms", "286 MiB"] {
             XCTAssertTrue(table.contains(needle), "table is missing \(needle):\n\(table)")
         }

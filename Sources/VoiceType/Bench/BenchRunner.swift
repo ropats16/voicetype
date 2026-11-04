@@ -3,16 +3,27 @@ import Foundation
 /// A speech engine the bench can run: an id for the report and the same
 /// model-path → adapter factory `TranscriptionEngine` takes.
 struct BenchEngine {
+    /// The engine settings the app takes from `Config`.
+    struct Options: Equatable {
+        let language: String
+        /// 0 = the engine's own default.
+        let threads: Int
+    }
+
     let id: String
     let makeAdapter: (String) throws -> TranscriptionAdapter
 
-    /// Every engine `--bench --engine <id>` accepts. To bench a new adapter,
-    /// add one line here.
-    static let all: [BenchEngine] = [
-        BenchEngine(id: "whisper") { try WhisperAdapter(modelPath: $0, language: "en", threads: 0) },
-    ]
+    /// Every engine `--bench --engine <id>` accepts, built with the app's own
+    /// factories. To bench a new adapter, add one line here.
+    static func all(_ options: Options) -> [BenchEngine] {
+        [
+            BenchEngine(id: "whisper",
+                        makeAdapter: TranscriptionEngine.whisperAdapter(language: options.language,
+                                                                        threads: options.threads)),
+        ]
+    }
 
-    static func named(_ id: String) -> BenchEngine? { all.first { $0.id == id } }
+    static func named(_ id: String, _ options: Options) -> BenchEngine? { all(options).first { $0.id == id } }
 }
 
 /// One fixture, decoded to 16 kHz mono.
@@ -30,6 +41,10 @@ struct BenchClip {
     let samples: [Float]
 
     var audioSeconds: Double { Double(samples.count) / AudioCapture.sampleRate }
+}
+
+extension Array where Element == BenchClip {
+    func of(_ kind: BenchClip.Kind) -> [BenchClip] { filter { $0.kind == kind } }
 }
 
 enum BenchError: LocalizedError {
@@ -52,14 +67,14 @@ enum BenchError: LocalizedError {
 struct BenchRunner {
     let engine: BenchEngine
     let modelPath: String
-    /// Passes over the short clips; more runs steady the percentiles.
+    /// Passes over the short clips (≥ 1); more runs steady the percentiles.
     var shortRuns: Int
 
     /// Monotonic seconds; injectable so tests can fake the passage of time.
     var clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     /// The process's memory now; nil if it can't be read.
     var memory: () -> MemorySnapshot? = MemorySnapshot.current
-    /// How often memory is sampled between jobs (it's also sampled after each).
+    /// How often memory is sampled while jobs run (it's also sampled between them).
     var memorySampleInterval: TimeInterval = 0.005
 
     init(engine: BenchEngine, modelPath: String, shortRuns: Int) {
@@ -74,14 +89,13 @@ struct BenchRunner {
         peak.start(every: memorySampleInterval)
         defer { peak.stop() }
 
-        // Wrap the adapter so the bench sees exactly what the engine does: how
-        // long the factory took, and when the engine's warm-up job finished.
+        // Wrap the factory and adapter so the bench sees exactly what the
+        // engine does: how long the factory took, and when its warm-up ran.
         let timing = LoadTiming()
-        let engineID = engine.id
         let transcriptionEngine = TranscriptionEngine(modelPath: modelPath) { [clock, make = engine.makeAdapter] path in
             let start = clock()
             let inner = try make(path)
-            let adapter = TimedAdapter(inner, clock: clock, afterEachCall: peak.sample)
+            let adapter = TimedAdapter(inner, clock: clock)
             timing.set(adapterSeconds: clock() - start, adapter: adapter)
             return adapter
         }
@@ -93,21 +107,20 @@ struct BenchRunner {
         case .ready: break
         case .missing: throw BenchError.modelMissing(path: modelPath)
         case .failed(let reason): throw BenchError.loadFailed(reason: reason)
-        case .notLoaded, .loading: throw BenchError.loadFailed(reason: "\(engineID) never finished loading")
+        case .notLoaded, .loading: throw BenchError.loadFailed(reason: "\(engine.id) never finished loading")
         }
         // The warm-up is the adapter's first call; the engine reports ready
         // right after it, so the load ends when it does (not when we polled).
         let (adapterSeconds, warmUp) = timing.get()
-        let loadEnd = warmUp?.end ?? clock()
         let load = BenchResults.Load(adapterSeconds: adapterSeconds,
-                                     warmUpSeconds: warmUp.map { $0.end - $0.start } ?? 0,
-                                     totalSeconds: loadEnd - loadStart)
+                                     warmUpSeconds: warmUp?.seconds ?? 0,
+                                     totalSeconds: (warmUp?.end ?? clock()) - loadStart)
+        peak.sample()
         let loaded = memory()
 
-        let short = try await runShort(clips.filter { $0.kind == .short }, on: transcriptionEngine)
-        let long = try await runLong(clips.filter { $0.kind == .long }, on: transcriptionEngine)
+        let short = try await runShort(clips.of(.short), on: transcriptionEngine, peak: peak)
+        let long = try await runLong(clips.of(.long), on: transcriptionEngine, peak: peak)
 
-        peak.sample()
         let end = memory()
         var memoryResult: BenchResults.Memory?
         if let baseline, let loaded, let end, let peakBytes = peak.max {
@@ -117,41 +130,48 @@ struct BenchRunner {
         return BenchResults(load: load, memory: memoryResult, short: short, long: long)
     }
 
-    private func runShort(_ clips: [BenchClip], on engine: TranscriptionEngine) async throws -> BenchResults.Short {
+    /// One timed job; memory is sampled after the clock stops.
+    private func timedTranscribe(_ clip: BenchClip, on engine: TranscriptionEngine,
+                                 peak: PeakSampler) async throws -> (text: String, seconds: TimeInterval) {
+        let start = clock()
+        let text = try await engine.transcribe(clip.samples).text
+        let seconds = clock() - start
+        peak.sample()
+        return (text.trimmingCharacters(in: .whitespacesAndNewlines), seconds)
+    }
+
+    private func runShort(_ clips: [BenchClip], on engine: TranscriptionEngine,
+                          peak: PeakSampler) async throws -> BenchResults.Short {
         var latencies = [[Double]](repeating: [], count: clips.count)
         var hypotheses = [String](repeating: "", count: clips.count)
         // Round-robin, so slow drift (thermals, background load) spreads over
         // every clip instead of landing on one.
-        for run in 0..<max(shortRuns, 1) {
+        for run in 0..<shortRuns {
             for (i, clip) in clips.enumerated() {
-                let start = clock()
-                let text = try await engine.transcribe(clip.samples).text
-                latencies[i].append(clock() - start)
-                if run == 0 { hypotheses[i] = text.trimmingCharacters(in: .whitespacesAndNewlines) }
+                let job = try await timedTranscribe(clip, on: engine, peak: peak)
+                latencies[i].append(job.seconds)
+                if run == 0 { hypotheses[i] = job.text }
             }
         }
         let results = clips.enumerated().map { i, clip in
             BenchResults.ShortClip(id: clip.id, audioSeconds: clip.audioSeconds,
                                    latenciesSeconds: latencies[i],
                                    medianLatencySeconds: BenchStats.percentile(latencies[i], 50) ?? 0,
-                                   reference: clip.reference, hypothesis: hypotheses[i],
-                                   wer: WordErrorRate.score(reference: clip.reference, hypothesis: hypotheses[i]))
+                                   transcript: .init(reference: clip.reference, hypothesis: hypotheses[i]))
         }
         return BenchResults.Short(clips: results, latency: BenchStats.LatencySummary(latencies.flatMap { $0 }),
-                                  wer: WordErrorRate.total(results.map(\.wer)))
+                                  wer: WordErrorRate.total(results.map(\.transcript.wer)))
     }
 
-    private func runLong(_ clips: [BenchClip], on engine: TranscriptionEngine) async throws -> BenchResults.Long {
+    private func runLong(_ clips: [BenchClip], on engine: TranscriptionEngine,
+                         peak: PeakSampler) async throws -> BenchResults.Long {
         var results: [BenchResults.LongClip] = []
         for clip in clips {
-            let start = clock()
-            let text = try await engine.transcribe(clip.samples).text.trimmingCharacters(in: .whitespacesAndNewlines)
-            let seconds = clock() - start
-            results.append(.init(id: clip.id, audioSeconds: clip.audioSeconds, processingSeconds: seconds,
-                                 realTimeFactor: BenchStats.realTimeFactor(processingSeconds: seconds,
+            let job = try await timedTranscribe(clip, on: engine, peak: peak)
+            results.append(.init(id: clip.id, audioSeconds: clip.audioSeconds, processingSeconds: job.seconds,
+                                 realTimeFactor: BenchStats.realTimeFactor(processingSeconds: job.seconds,
                                                                            audioSeconds: clip.audioSeconds),
-                                 reference: clip.reference, hypothesis: text,
-                                 wer: WordErrorRate.score(reference: clip.reference, hypothesis: text)))
+                                 transcript: .init(reference: clip.reference, hypothesis: job.text)))
         }
         let audio = results.map(\.audioSeconds).reduce(0, +)
         let processing = results.map(\.processingSeconds).reduce(0, +)
@@ -159,7 +179,7 @@ struct BenchRunner {
             clips: results,
             realTimeFactor: results.isEmpty ? nil
                 : BenchStats.realTimeFactor(processingSeconds: processing, audioSeconds: audio),
-            wer: WordErrorRate.total(results.map(\.wer)))
+            wer: WordErrorRate.total(results.map(\.transcript.wer)))
     }
 }
 
@@ -174,19 +194,35 @@ struct BenchResults: Codable, Equatable {
         let totalSeconds: Double
     }
 
-    /// Process physical footprint (`phys_footprint`, what Activity Monitor
-    /// calls Memory; on Apple Silicon it includes Metal buffers), in bytes.
+    /// The bench process's physical footprint (`phys_footprint`, what Activity
+    /// Monitor calls Memory; on Apple Silicon it includes Metal buffers), in
+    /// bytes. An engine that runs in another process (an OS speech service)
+    /// isn't counted.
     struct Memory: Codable, Equatable {
         /// Before the model loads (fixtures are already decoded).
         let baselineBytes: UInt64
         /// After load and warm-up: the resident model.
         let loadedBytes: UInt64
-        /// Highest footprint sampled (every 5 ms and after each job) from the
+        /// Highest footprint sampled (on a timer and between jobs) from the
         /// start of the load to the end of the run: the engine's peak.
         let peakBytes: UInt64
         /// The kernel's `ri_lifetime_max_phys_footprint` at the end: an upper
         /// bound that also counts fixture decoding before the load.
         let lifetimePeakBytes: UInt64
+    }
+
+    /// A clip's reference, what the engine heard, and the WER between them.
+    struct ScoredTranscript: Codable, Equatable {
+        let reference: String
+        /// Trimmed; for short clips, from the first run.
+        let hypothesis: String
+        let wer: WordErrorRate
+
+        init(reference: String, hypothesis: String) {
+            self.reference = reference
+            self.hypothesis = hypothesis
+            wer = WordErrorRate.score(reference: reference, hypothesis: hypothesis)
+        }
     }
 
     struct ShortClip: Codable, Equatable {
@@ -195,16 +231,13 @@ struct BenchResults: Codable, Equatable {
         /// `transcribe` wall time for each run, in run order.
         let latenciesSeconds: [Double]
         let medianLatencySeconds: Double
-        let reference: String
-        /// From the first run.
-        let hypothesis: String
-        let wer: WordErrorRate
+        let transcript: ScoredTranscript
     }
 
     struct Short: Codable, Equatable {
         let clips: [ShortClip]
-        /// Over every run of every clip; nil if there were no short clips.
-        let latency: BenchStats.LatencySummary?
+        /// Over every run of every clip; null if there were no short clips.
+        @NullWhenAbsent var latency: BenchStats.LatencySummary?
         /// Pooled over the clips.
         let wer: WordErrorRate
     }
@@ -214,21 +247,19 @@ struct BenchResults: Codable, Equatable {
         let audioSeconds: Double
         let processingSeconds: Double
         let realTimeFactor: Double
-        let reference: String
-        let hypothesis: String
-        let wer: WordErrorRate
+        let transcript: ScoredTranscript
     }
 
     struct Long: Codable, Equatable {
         let clips: [LongClip]
-        /// Total processing over total audio; nil if there were no long clips.
-        let realTimeFactor: Double?
+        /// Total processing over total audio; null if there were no long clips.
+        @NullWhenAbsent var realTimeFactor: Double?
         let wer: WordErrorRate
     }
 
     let load: Load
-    /// nil if the footprint couldn't be read.
-    let memory: Memory?
+    /// Null if the footprint couldn't be read.
+    @NullWhenAbsent var memory: Memory?
     let short: Short
     let long: Long
 }
@@ -268,9 +299,10 @@ private final class PeakSampler: @unchecked Sendable {
         lock.withLock { _max = Swift.max(_max ?? 0, now) }
     }
 
+    /// The timer runs at the engine queue's QoS, so a busy engine can't starve it.
     func start(every interval: TimeInterval) {
         sample()
-        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
         timer.schedule(deadline: .now() + interval, repeating: interval)
         timer.setEventHandler { [weak self] in self?.sample() }
         timer.resume()
@@ -281,6 +313,13 @@ private final class PeakSampler: @unchecked Sendable {
         timer?.cancel()
         timer = nil
     }
+}
+
+/// A span on the bench clock.
+private struct Interval {
+    let start: TimeInterval
+    let end: TimeInterval
+    var seconds: TimeInterval { end - start }
 }
 
 /// Load timings, written on the engine's queue and read by the runner.
@@ -296,35 +335,31 @@ private final class LoadTiming: @unchecked Sendable {
         }
     }
 
-    /// The adapter load time and the first call (the engine's warm-up).
-    func get() -> (TimeInterval, (start: TimeInterval, end: TimeInterval)?) {
+    /// The factory's time, and the adapter's first call (the engine's warm-up).
+    func get() -> (adapterSeconds: TimeInterval, warmUp: Interval?) {
         lock.withLock { (adapterSeconds, adapter?.firstCall) }
     }
 }
 
-/// Forwards to the real adapter, recording when its first call ran and
-/// sampling memory after every call.
+/// Forwards to the real adapter, recording when its first call ran.
 private final class TimedAdapter: TranscriptionAdapter {
     private let inner: TranscriptionAdapter
     private let clock: () -> TimeInterval
-    private let afterEachCall: () -> Void
     private let lock = NSLock()
-    private var _firstCall: (start: TimeInterval, end: TimeInterval)?
+    private var _firstCall: Interval?
 
-    init(_ inner: TranscriptionAdapter, clock: @escaping () -> TimeInterval, afterEachCall: @escaping () -> Void) {
+    init(_ inner: TranscriptionAdapter, clock: @escaping () -> TimeInterval) {
         self.inner = inner
         self.clock = clock
-        self.afterEachCall = afterEachCall
     }
 
-    var firstCall: (start: TimeInterval, end: TimeInterval)? { lock.withLock { _firstCall } }
+    var firstCall: Interval? { lock.withLock { _firstCall } }
 
     func transcribe(samples: [Float]) throws -> [Transcript.Segment] {
         let start = clock()
         defer {
             let end = clock()
-            lock.withLock { if _firstCall == nil { _firstCall = (start, end) } }
-            afterEachCall()
+            lock.withLock { if _firstCall == nil { _firstCall = Interval(start: start, end: end) } }
         }
         return try inner.transcribe(samples: samples)
     }

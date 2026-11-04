@@ -27,6 +27,35 @@ final class WordErrorRateTests: XCTestCase {
                         "one", "thousand", "nine", "hundred", "five"])
     }
 
+    func testFourDigitYearsReadYearStyle() {
+        let w = TranscriptNormalizer.words
+        XCTAssertEqual(w("1961"), ["nineteen", "sixty", "one"])
+        XCTAssertEqual(w("1900"), ["nineteen", "hundred"])
+        XCTAssertEqual(w("1905"), ["nineteen", "oh", "five"])
+        XCTAssertEqual(w("2005"), ["two", "thousand", "five"])
+        XCTAssertEqual(w("2000"), ["two", "thousand"])
+        XCTAssertEqual(w("2010"), ["twenty", "ten"])
+        XCTAssertEqual(w("1100"), ["eleven", "hundred"])
+    }
+
+    func testNumbersOutsideTheYearRangeOrWithSeparatorsStayCardinal() {
+        let w = TranscriptNormalizer.words
+        XCTAssertEqual(w("1099"), ["one", "thousand", "ninety", "nine"])
+        XCTAssertEqual(w("2100"), ["two", "thousand", "one", "hundred"])
+        XCTAssertEqual(w("1,961"), ["one", "thousand", "nine", "hundred", "sixty", "one"])
+    }
+
+    func testDollarsAndPercentKeepTheirUnitWords() {
+        let w = TranscriptNormalizer.words
+        XCTAssertEqual(w("$5"), ["five", "dollars"])
+        XCTAssertEqual(w("$1"), ["one", "dollar"])
+        XCTAssertEqual(w("$1,500 total"), ["one", "thousand", "five", "hundred", "dollars", "total"])
+        XCTAssertEqual(w("$1999"), ["one", "thousand", "nine", "hundred", "ninety", "nine", "dollars"],
+                       "A dollar amount is never a year")
+        XCTAssertEqual(w("up 5% today"), ["up", "five", "percent", "today"])
+        XCTAssertEqual(w("costs $ much"), ["costs", "much"], "A stray $ is dropped")
+    }
+
     func testEmptyAndPunctuationOnlyTextHasNoWords() {
         XCTAssertEqual(TranscriptNormalizer.words(""), [])
         XCTAssertEqual(TranscriptNormalizer.words(" ... — ! "), [])

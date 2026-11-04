@@ -5,9 +5,13 @@ extension TranscriptionEngine {
     /// The app's engine: whisper.cpp (Metal-accelerated) behind the engine's
     /// load, warm-up and job queue.
     static func whisper(modelPath: String, language: String, threads: Int) -> TranscriptionEngine {
-        TranscriptionEngine(modelPath: modelPath) { path in
-            try WhisperAdapter(modelPath: path, language: language, threads: threads)
-        }
+        TranscriptionEngine(modelPath: modelPath, makeAdapter: whisperAdapter(language: language, threads: threads))
+    }
+
+    /// The adapter factory `whisper(...)` uses, for callers (the bench) that
+    /// build their own engine around it.
+    static func whisperAdapter(language: String, threads: Int) -> (String) throws -> TranscriptionAdapter {
+        { path in try WhisperAdapter(modelPath: path, language: language, threads: threads) }
     }
 }
 

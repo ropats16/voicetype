@@ -339,7 +339,7 @@ error rate — as a table and a JSON file you can compare across Macs:
 ```sh
 bash scripts/fetch_bench_fixtures.sh       # one time: ~331 MiB download → .bench/fixtures
 make build
-.build/release/VoiceType --bench \
+.build/release/VoiceType --bench --git-sha "$(git describe --always --dirty)" \
   --model "$HOME/Library/Application Support/VoiceType/models/ggml-medium.en.bin"
 ```
 
