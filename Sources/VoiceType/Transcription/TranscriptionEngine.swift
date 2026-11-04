@@ -258,12 +258,12 @@ final class TranscriptionEngine: @unchecked Sendable {
     }
 
     /// A load of `spec` failed. With no model to go back to, report `status`.
-    /// Otherwise report the failure, go back to `previous` (still in memory if
-    /// it wasn't let go yet) and report `.ready`.
+    /// Otherwise go back to `previous` (reloading it if it was already let
+    /// go), then report the failure and, right after, `.ready` — so whoever
+    /// handles the `.failed` already sees the engine back on `previous`.
     private func failSwitch(to spec: ModelSpec, _ status: TranscriptionStatus, previous: ModelSpec?, why: String) {
         guard let previous else { return setStatus(status) }
         let name = { (s: ModelSpec) in URL(fileURLWithPath: s.path).lastPathComponent }
-        setStatus(.failed(reason: "Couldn't switch to \(name(spec)) (\(why)). Still using \(name(previous))."))
         lock.withLock { _model = previous }
         if adapter == nil && idleSpec == nil {
             do {
@@ -271,9 +271,11 @@ final class TranscriptionEngine: @unchecked Sendable {
                 warmUp(restored)
                 install(restored, from: previous)
             } catch {
-                return setStatus(.failed(reason: error.localizedDescription))
+                return setStatus(.failed(reason: "Couldn't switch to \(name(spec)) (\(why)), "
+                                         + "nor reload \(name(previous)): \(error.localizedDescription)"))
             }
         }
+        setStatus(.failed(reason: "Couldn't switch to \(name(spec)) (\(why)). Still using \(name(previous))."))
         setStatus(.ready)
     }
 

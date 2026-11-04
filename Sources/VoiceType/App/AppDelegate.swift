@@ -236,7 +236,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Notifier.notify(title: "VoiceType: model not found", body: "Model file not found at \(path).\(fix)")
         case .failed(let reason):
             Log.error("Model load failed: \(reason)")
-            let fix = downloadHint.map { " Try `\($0)` to re-download it." } ?? ""
+            // After a failed switch the engine is already back on the previous
+            // model (ready); a re-download hint would name the wrong file.
+            let stillFailed = { if case .failed = self.engine.status { return true } else { return false } }()
+            let fix = stillFailed ? downloadHint.map { " Try `\($0)` to re-download it." } ?? "" : ""
             Notifier.notify(title: "VoiceType: model failed to load", body: "\(reason)\(fix)")
         case .ready:
             Log.info("Transcription model loaded: \(path)")
