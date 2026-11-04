@@ -1,16 +1,16 @@
-# Yolk v2 — plan (grilling outcome, 2026-10-29)
+# Zesty v2 — plan (grilling outcome, 2026-10-29; name + mascot picked 2026-11-04)
 
-Turn VoiceType into **Yolk**: cute, egg-mascot, fully local dictation + silent meeting transcription for macOS, handed out to friends as a case study. Free, MIT, open source.
+Turn VoiceType into **Zesty**: cute, lemon-mascot, fully local dictation + silent meeting transcription for macOS, handed out to friends as a case study. Free, MIT, open source.
 
 Research backing: [research-distribution.md](research-distribution.md).
 
 ## Decisions
 
 ### Product
-- **Mascot / name:** TBD in Phase 2 (#16). Want an animatable character w/ eyes, smile, rosy cheeks, hands + legs. Candidates: avocado, orange, peach, plum, egg ("Yolk"), original blob/ghost (no existing-IP likeness). Keep Yolk if it still wins.
-- **Rename:** repo, app, bundle ID `voicetype` → Yolk in brand phase, before any friend installs (resets own TCC once).
-- **Overlay:** draggable floating egg, remembers position, hidden until active by default. Opt-in "always visible" mini egg; click → start dictation / meeting. Persistent small recording egg during meetings (never record silently).
-- **Meetings:** transcript split Me (mic) / Them (system audio). Start = auto-detect Zoom/Meet/Teams mic use → prompt "Record?"; manual fallback (menu, hotkey, egg click). Never auto-record.
+- **Mascot / name (picked in #16, 2026-11-04):** **Zesty**, a vertical lemon with rounded tips, one stem + leaf, eyes, smile, rosy cheeks, little hands + legs. Concept art: `plans/mascot/lemon-v4-*.svg` (idle / listening / thinking / done + menu-bar glyph); options + name checks in `plans/mascot/`. Name caveat: DoorDash owns zesty.com + an iOS AI app "Zesty"; check its trademark before any public launch. Candidate domains: usezesty.app / tryzesty.app (no DNS), zesty.app (for sale).
+- **Rename:** repo, app, bundle ID `voicetype` → Zesty in brand phase, before any friend installs (resets own TCC once).
+- **Overlay:** draggable floating lemon, remembers position, hidden until active by default. Opt-in "always visible" mini lemon; click → start dictation / meeting. Persistent small recording lemon during meetings (never record silently).
+- **Meetings:** transcript split Me (mic) / Them (system audio). Start = auto-detect Zoom/Meet/Teams mic use → prompt "Record?"; manual fallback (menu, hotkey, lemon click). Never auto-record.
 - **Meeting pipeline:** audio streamed to disk continuously (crash-safe), chunked background transcription during call, final pass at end. Live captions = later polish.
 - **Raw audio:** deleted after transcription by default; "keep audio" setting.
 - **Summaries (later phase, optional):** on by default on macOS 26 via Apple Foundation Models (on-device, chunk + merge for ~4k ctx). Other Macs: opt-in OpenRouter, user picks model — explicit warning that text leaves the Mac.
@@ -46,9 +46,9 @@ Research backing: [research-distribution.md](research-distribution.md).
 - GitHub release download counts + opt-in anonymous launch ping (e.g. TelemetryDeck), disclosed.
 
 ## Phases
-0. **Research** — competitors (Granola, Superwhisper, Wispr Flow, MacWhisper, VoiceInk, Hex, Spokenly) features/UX/overlays; Reddit/HN complaints + gaps; "Yolk" name collision check (MAS, GitHub, domains).
+0. **Research** — competitors (Granola, Superwhisper, Wispr Flow, MacWhisper, VoiceInk, Hex, Spokenly) features/UX/overlays; Reddit/HN complaints + gaps; name collision check (done: Zesty) (MAS, GitHub, domains).
 1. **Architecture + perf** — `/improve-codebase-architecture` review; engine seam; benchmark spike; baseline tuning.
-2. **Brand + overlay** — rename to Yolk, egg mascot assets/animations, draggable overlay, UI refresh.
+2. **Brand + overlay** — rename to Zesty, lemon mascot assets/animations, draggable overlay, UI refresh.
 3. **Distribution** — Developer ID, notarization, DMG, Sparkle, Homebrew tap, onboarding (permissions + model picker/download w/ checksum), Acknowledgements, README Network activity.
 4. **Notes library + dictation history** — Markdown store, library window, Dock-icon toggle.
 5. **Meetings** — Core Audio taps + mic, meeting detection prompt, chunked transcription, Me/Them transcript, recording indicator, audio retention setting.
