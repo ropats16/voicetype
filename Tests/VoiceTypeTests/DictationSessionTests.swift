@@ -143,7 +143,8 @@ final class DictationSessionTests: XCTestCase {
         delivery = FakeDelivery()
         feedback = FakeFeedback()
         history = FakeHistory()
-        settings = DictationSettings(minSeconds: 0.3, maxSeconds: 600, trailingSpace: false)
+        settings = DictationSettings(minSeconds: 0.3, maxSeconds: 600,
+                                     ceilingSeconds: AudioCapture.ceilingSeconds, trailingSpace: false)
         session = DictationSession(
             capture: capture, engine: engine, delivery: delivery, feedback: feedback,
             history: history, clock: clock, settings: { [unowned self] in settings }

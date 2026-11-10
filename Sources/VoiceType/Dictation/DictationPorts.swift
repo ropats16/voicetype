@@ -106,8 +106,13 @@ final class SystemDictationClock: DictationClock {
 struct DictationSettings: Equatable {
     /// Recordings shorter than this are accidental taps and are dropped.
     var minSeconds: Double = 0.3
-    /// Longest recording before it stops itself; `<= 0` = the capture's ceiling.
+    /// Longest recording before it stops itself; `<= 0` = `ceilingSeconds`.
     var maxSeconds: Double
+    /// The capture's own hard cap, used when `maxSeconds` sets no limit.
+    var ceilingSeconds: Double
     /// Append a space after the delivered text.
     var trailingSpace: Bool
+
+    /// The max-duration timer's length.
+    var limitSeconds: Double { maxSeconds > 0 ? maxSeconds : ceilingSeconds }
 }

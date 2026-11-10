@@ -59,7 +59,7 @@ final class DictationSession {
     private var state: State = .idle
     /// The running recording's max-duration timer; at most one exists.
     private var timer: DictationTimer?
-    private var lastId = 0
+    private var recordingCount = 0
 
     var phase: Phase {
         switch state {
@@ -85,7 +85,7 @@ final class DictationSession {
         self.settings = settings
         capture.onLevel = { [weak self] level in
             guard let self, case .recording = state else { return }
-            feedback.showLevel(level)
+            self.feedback.showLevel(level)
         }
     }
 
@@ -119,8 +119,7 @@ final class DictationSession {
         case (.recording(let id, _, _), .micStarted(let started, let error?)) where started == id,
              (.finishingCapture(let id, _), .micStarted(let started, let error?)) where started == id:
             // The capture is over; its `end`, if any, brings no samples.
-            Log.error("Couldn't start recording: \(error.localizedDescription)")
-            feedback.notify(title: "Couldn't start recording", body: error.localizedDescription)
+            fail("Couldn't start recording", error)
             end()
 
         // transcribing
@@ -143,8 +142,7 @@ final class DictationSession {
             case .success(let raw):
                 deliver(TranscriptCleanup.clean(raw, trailingSpace: trailingSpace))
             case .failure(let error):
-                Log.error("Transcription failed: \(error.localizedDescription)")
-                feedback.notify(title: "Transcription failed", body: error.localizedDescription)
+                fail("Transcription failed", error)
             }
 
         // Everything else: repeats (auto-repeat key down), intents while busy,
@@ -157,10 +155,9 @@ final class DictationSession {
     // MARK: - Actions
 
     private func start() {
-        lastId += 1
-        let id = lastId
-        let configured = settings().maxSeconds
-        let limit = configured > 0 ? configured : AudioCapture.ceilingSeconds
+        recordingCount += 1
+        let id = recordingCount
+        let limit = settings().limitSeconds
         state = .recording(id: id, startedAt: clock.now, limit: limit)
         Log.info("Recording started.")
         // Reload an idle-unloaded model while the user talks, and keep it
@@ -216,6 +213,11 @@ final class DictationSession {
         }
         history.delivered(text, outcome: outcome)
         state = .idle
+    }
+
+    private func fail(_ title: String, _ error: Error) {
+        Log.error("\(title): \(error.localizedDescription)")
+        feedback.notify(title: title, body: error.localizedDescription)
     }
 
     private func cancelTimer() {

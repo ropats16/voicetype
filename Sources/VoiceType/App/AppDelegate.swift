@@ -285,12 +285,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             capture: capture,
             engine: EngineDictationAdapter(engine),
             delivery: PasteDelivery(),
-            feedback: IndicatorFeedback(soundCues: SoundCues(isEnabled: { [weak configStore] in
-                configStore?.config.soundCues ?? false
+            feedback: IndicatorFeedback(soundCues: SoundCues(isEnabled: { [configStore] in
+                configStore.config.soundCues
             })),
             settings: { [configStore] in
-                DictationSettings(minSeconds: 0.3,
-                                  maxSeconds: configStore.config.maxRecordingSeconds,
+                DictationSettings(maxSeconds: configStore.config.maxRecordingSeconds,
+                                  ceilingSeconds: AudioCapture.ceilingSeconds,
                                   trailingSpace: configStore.config.trailingSpace)
             }
         )
