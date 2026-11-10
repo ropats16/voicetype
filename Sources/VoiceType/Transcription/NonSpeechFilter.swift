@@ -1,15 +1,17 @@
 import Foundation
 
 /// Removes whisper's non-speech tags (`[BLANK_AUDIO]`, `[Music]`, `(music)`,
-/// `(laughs)`, `♪`) from transcripts, so they never reach the user's text.
-/// `suppress_nst` stops most of them at decode time; this catches the rest.
+/// `(laughs)`, `*sighs*`, `♪`) from transcripts, so they never reach the
+/// user's text. This is the app's only guard: `suppress_nst` is off by default
+/// (`WhisperTuning`), since it would also ban `:`, `/`, quotes, … at decode time.
 ///
 /// - A segment that is nothing but tags (bracketed or parenthesized, any
 ///   content) is dropped.
 /// - Inside speech, `[...]` and music symbols are always removed (whisper
-///   never writes square brackets for spoken words); `(...)` only when it names
-///   a sound (music, laughter, applause, …), so a spoken aside in parentheses
-///   stays.
+///   never writes square brackets for spoken words); `(...)` and `*...*` only
+///   when they name a sound (music, laughter, applause, …), so a spoken aside
+///   in parentheses stays; `*...*` only hugging its words (`*sighs*`, not
+///   `2 * noise * 3`).
 enum NonSpeechFilter {
     /// Segments with their tags removed; tag-only segments dropped. Times are kept.
     static func filter(_ segments: [Transcript.Segment]) -> [Transcript.Segment] {
@@ -44,11 +46,14 @@ enum NonSpeechFilter {
     private static let tagOnly = try! NSRegularExpression(
         pattern: #"^\s*(?:(?:\[[^\[\]]*\]|\([^()]*\)|[\#(musicSymbols)]+)\s*)+$"#)
 
-    /// A tag inside speech: any `[...]`, music symbols, or a `(...)` naming a sound.
+    /// A tag inside speech: any `[...]`, music symbols, or a `(...)` or
+    /// `*...*` naming a sound.
     private static let inlineTag = try! NSRegularExpression(
         pattern: #"\[[^\[\]]*\]|[\#(musicSymbols)]+|\([^()]*\b(?:"#
             + soundWords.joined(separator: "|")
-            + #")\b[^()]*\)"#,
+            + #")\b[^()]*\)|\*(?!\s)[^*]*\b(?:"#
+            + soundWords.joined(separator: "|")
+            + #")\b[^*]*(?<!\s)\*"#,
         options: [.caseInsensitive])
 
     /// Words whisper's sound captions use, as regex fragments.

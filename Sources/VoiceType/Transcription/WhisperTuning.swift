@@ -1,11 +1,14 @@
 import Foundation
 
 /// The whisper.cpp decoding knobs #7 benchmarks. `default` is what the app
-/// ships: today's decoding, plus non-speech tokens suppressed. Thread count is
-/// a separate setting (`Config.threads`), passed alongside.
+/// ships, chosen from the bench (`plans/benchmark.md`, "Whisper tuning (#7) —
+/// results"): whisper.cpp's own decoding — every knob off except temperature
+/// fallback. Non-speech tags are kept out of the text by `NonSpeechFilter`,
+/// not `suppress_nst`. Thread count is a separate setting (`Config.threads`),
+/// passed alongside.
 ///
 /// Encodes flat, as the bench report records it:
-/// `{"suppressNonSpeech": true, "audioContext": "off"|"clip",
+/// `{"suppressNonSpeech": false, "audioContext": "off"|"clip",
 ///   "temperatureFallback": true, "vad": null|"<silero model path>"}`.
 struct WhisperTuning: Codable, Equatable {
     /// How much of the encoder's 30 s window to run.
@@ -32,12 +35,23 @@ struct WhisperTuning: Codable, Equatable {
     }
 
     /// whisper.cpp `suppress_nst`: never decode non-speech tokens (♪, brackets,
-    /// "(music)"-style tags).
-    var suppressNonSpeech = true
+    /// "(music)"-style tags). Off by default: its token list also bans `"`,
+    /// `:`, `/`, `(`, `)`, `*`, `+`, `=`, `@`, `#`, `_`, … — characters
+    /// dictation needs ("3:30", "and/or", quotes) — and on digital silence it
+    /// turns medium.en's `[BLANK_AUDIO]` into a hallucinated "you".
+    var suppressNonSpeech = false
+    /// `.sizedToClip` is off by default: on medium.en it made short clips
+    /// loop and hallucinate (WER 3.1% → 16.5%, p90 0.3 s → 5.5 s).
     var audioContext: AudioContext = .full
     /// Re-decode at rising temperatures (whisper.cpp `temperature_inc` 0.2,
     /// its default) when a greedy decode looks bad; off = one decode at 0.
+    /// On: it costs nothing on clean speech or silence, and rescues decodes
+    /// that go wrong.
     var temperatureFallback = true
+    /// Off by default: no faster on dictation-length speech and less accurate
+    /// on long audio (segments lose context). It does skip silence (~10 ms vs
+    /// ~200 ms for an empty clip on medium.en), so it's worth
+    /// revisiting for silence-heavy audio.
     var vad: VAD = .off
 
     static let `default` = WhisperTuning()

@@ -263,7 +263,7 @@ logs the problem at startup and the menu shows a **Config issue** warning.
 | `maxRecordingSeconds` | Auto-stop after this many seconds (default 600; `0` = no limit, capped at 30 min). |
 | `trailingSpace`       | Add a space after each dictation (default off).     |
 | `language`            | `en` (default), another code like `de`, or `auto`. English-only models always use `en`. |
-| `threads`             | CPU threads; `0` = pick automatically.              |
+| `threads`             | CPU threads; `0` = auto (performance cores, max 8). |
 | `keepMicWarm`         | Keep the mic on from launch (default off: it stays on 30 s after each dictation). |
 
 ---

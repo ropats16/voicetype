@@ -8,12 +8,21 @@ final class WhisperTuningTests: XCTestCase {
 
     // MARK: - Defaults
 
-    func testDefaultsKeepTodaysDecodingButSuppressNonSpeech() {
+    func testDefaultsAreTheBenchChoice() {
         let t = WhisperTuning.default
-        XCTAssertTrue(t.suppressNonSpeech, "#7: non-speech tokens are always suppressed by default")
+        XCTAssertFalse(t.suppressNonSpeech, "#7: suppress_nst also bans : / \" etc.; NonSpeechFilter drops tags")
         XCTAssertEqual(t.audioContext, .full)
         XCTAssertTrue(t.temperatureFallback)
         XCTAssertEqual(t.vad, .off)
+    }
+
+    func testAutoThreadsArePerformanceCoresCappedAtEight() {
+        XCTAssertEqual(WhisperAdapter.autoThreadCount(performanceCores: 12, activeProcessors: 16), 8, "M3 Max")
+        XCTAssertEqual(WhisperAdapter.autoThreadCount(performanceCores: 4, activeProcessors: 8), 4,
+                       "M1/M2: no efficiency cores")
+        XCTAssertEqual(WhisperAdapter.autoThreadCount(performanceCores: nil, activeProcessors: 6), 6, "Intel")
+        XCTAssertEqual(WhisperAdapter.autoThreadCount(performanceCores: nil, activeProcessors: 0), 1)
+        XCTAssertGreaterThanOrEqual(WhisperAdapter.autoThreadCount(), 1, "this Mac")
     }
 
     // MARK: - Encoder context sizing
@@ -58,9 +67,9 @@ final class WhisperTuningTests: XCTestCase {
         }
     }
 
-    func testDefaultTuningMapsToTodaysParamsPlusSuppressNST() {
+    func testDefaultTuningMapsToWhisperCppsOwnDecoding() {
         let p = params(.default)
-        XCTAssertTrue(p.suppress_nst)
+        XCTAssertFalse(p.suppress_nst)
         XCTAssertEqual(p.audio_ctx, 0)
         XCTAssertEqual(p.temperature, 0)
         XCTAssertEqual(p.temperature_inc, 0.2, accuracy: 1e-6)
@@ -76,12 +85,12 @@ final class WhisperTuningTests: XCTestCase {
 
     func testEveryKnobReachesItsParam() {
         var t = WhisperTuning.default
-        t.suppressNonSpeech = false
+        t.suppressNonSpeech = true
         t.audioContext = .sizedToClip
         t.temperatureFallback = false
         t.vad = .silero(modelPath: "/models/ggml-silero.bin")
         let p = params(t, sampleCount: 16_000 * 11)
-        XCTAssertFalse(p.suppress_nst)
+        XCTAssertTrue(p.suppress_nst)
         XCTAssertEqual(p.audio_ctx, 640)
         XCTAssertEqual(p.temperature_inc, 0, "0 = no temperature fallback in whisper.cpp")
         XCTAssertTrue(p.vad)
@@ -94,25 +103,25 @@ final class WhisperTuningTests: XCTestCase {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         XCTAssertEqual(String(decoding: try encoder.encode(WhisperTuning.default), as: UTF8.self),
-                       #"{"audioContext":"off","suppressNonSpeech":true,"temperatureFallback":true,"vad":null}"#)
+                       #"{"audioContext":"off","suppressNonSpeech":false,"temperatureFallback":true,"vad":null}"#)
 
         var t = WhisperTuning.default
         t.audioContext = .sizedToClip
         t.vad = .silero(modelPath: "/m/ggml-silero-v6.2.0.bin")
         let data = try encoder.encode(t)
         XCTAssertEqual(String(decoding: data, as: UTF8.self),
-                       #"{"audioContext":"clip","suppressNonSpeech":true,"temperatureFallback":true,"vad":"/m/ggml-silero-v6.2.0.bin"}"#)
+                       #"{"audioContext":"clip","suppressNonSpeech":false,"temperatureFallback":true,"vad":"/m/ggml-silero-v6.2.0.bin"}"#)
         XCTAssertEqual(try JSONDecoder().decode(WhisperTuning.self, from: data), t)
     }
 
     func testSummaryUsesTheBenchFlagVocabulary() {
-        XCTAssertEqual(WhisperTuning.default.summary, "suppress-nst on · audio-ctx off · temp-fallback on · vad off")
+        XCTAssertEqual(WhisperTuning.default.summary, "suppress-nst off · audio-ctx off · temp-fallback on · vad off")
         var t = WhisperTuning.default
-        t.suppressNonSpeech = false
+        t.suppressNonSpeech = true
         t.audioContext = .sizedToClip
         t.temperatureFallback = false
         t.vad = .silero(modelPath: "/m/ggml-silero-v6.2.0.bin")
-        XCTAssertEqual(t.summary, "suppress-nst off · audio-ctx clip · temp-fallback off · vad ggml-silero-v6.2.0.bin")
+        XCTAssertEqual(t.summary, "suppress-nst on · audio-ctx clip · temp-fallback off · vad ggml-silero-v6.2.0.bin")
     }
 
     // MARK: - Non-speech tag filter
@@ -132,11 +141,14 @@ final class WhisperTuningTests: XCTestCase {
         XCTAssertEqual(NonSpeechFilter.clean(" Thanks (laughs)."), " Thanks.")
         XCTAssertEqual(NonSpeechFilter.clean(" Okay (Laughter) so"), " Okay so")
         XCTAssertEqual(NonSpeechFilter.clean(" ♪ la la la ♪"), " la la la")
+        XCTAssertEqual(NonSpeechFilter.clean(" Well *sighs* okay."), " Well okay.")
+        XCTAssertEqual(NonSpeechFilter.clean(" *Laughs*"), "")
     }
 
     func testOrdinaryTextAndSpokenParenthesesAreLeftAlone() {
         for text in [" Hello, world.", " The function (which is fine) returns.", "  Two  spaces stay.",
-                     " Prices rose 5% (year on year).", ""] {
+                     " Prices rose 5% (year on year).", " Meet at 3:30 and/or 4, \"he said\".",
+                     " Multiply 2 * noise * 3.", " This is *really* important.", ""] {
             XCTAssertEqual(NonSpeechFilter.clean(text), text)
         }
     }

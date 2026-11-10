@@ -50,8 +50,27 @@ final class WhisperAdapter: TranscriptionAdapter {
         self.languageC = strdup(language)
         self.vadModelPathC = tuning.vad.modelPath.map { strdup($0) }
 
-        let hw = ProcessInfo.processInfo.activeProcessorCount
-        self.threads = Int32(threads > 0 ? threads : max(1, min(hw, 8)))
+        self.threads = Int32(threads > 0 ? threads : Self.autoThreadCount())
+    }
+
+    /// Threads for `Config.threads == 0` (auto): the performance cores, at
+    /// most `maxAutoThreads`; all active cores where there are no
+    /// performance levels (Intel). With Metal the GPU does the heavy lifting,
+    /// and the bench (#7) found 1–12 threads within noise on an M3 Max, so
+    /// there's no gain in more — and efficiency cores would only lag behind
+    /// ggml's per-op thread barriers on Macs with few performance cores.
+    static func autoThreadCount(performanceCores: Int? = sysctlInt("hw.perflevel0.physicalcpu"),
+                                activeProcessors: Int = ProcessInfo.processInfo.activeProcessorCount) -> Int {
+        max(1, min(performanceCores ?? activeProcessors, maxAutoThreads))
+    }
+
+    static let maxAutoThreads = 8
+
+    private static func sysctlInt(_ name: String) -> Int? {
+        var value: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname(name, &value, &size, nil, 0) == 0, value > 0 else { return nil }
+        return Int(value)
     }
 
     deinit {

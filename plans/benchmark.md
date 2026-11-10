@@ -36,7 +36,7 @@ Options:
 | `--only short\|long` | both | skip one half (the long clip dominates run time) |
 | `--language <code>` | `config.json`'s `language` | passed to the engine, as the app does |
 | `--threads <n>` | `config.json`'s `threads` (0 = auto) | passed to the engine, as the app does |
-| `--suppress-nst on\|off` | `on` | whisper `suppress_nst`: never decode non-speech tokens (♪, `[…]`, `(…)`) |
+| `--suppress-nst on\|off` | `off` | whisper `suppress_nst`: never decode non-speech tokens (♪, `[…]`, `(…)` — but also `"` `:` `/` `*` `+` `=` `@` `#` `_` …) |
 | `--audio-ctx off\|clip` | `off` | whisper `audio_ctx`: `off` = full 1500-frame (30 s) encoder window; `clip` = sized to each clip (`WhisperTuning.audioContext(forSampleCount:)`: frames + 64 padding, rounded up to 64, min 256, full window from ~28.5 s) |
 | `--temp-fallback on\|off` | `on` | whisper `temperature_inc`: `on` = 0.2 (re-decode hotter when a decode looks bad), `off` = 0 (one greedy decode) |
 | `--vad off\|<file>` | `off` | whisper's built-in Silero VAD: transcribe only detected speech. `<file>` = a ggml Silero model (`bash scripts/download_vad_model.sh` / `make vad-model` → `~/Library/Application Support/VoiceType/models/ggml-silero-v6.2.0.bin`) |
@@ -56,7 +56,7 @@ VAD="$(bash scripts/download_vad_model.sh)"
 ```
 
 The chosen tuning is printed in the table header (`language en · threads auto ·
-suppress-nst on · audio-ctx off · temp-fallback on · vad off`) and recorded in
+suppress-nst off · audio-ctx off · temp-fallback on · vad off`) and recorded in
 the report's `settings.whisper`. Whatever the flags, the adapter always drops
 non-speech tags from the text (`NonSpeechFilter`), so WER never counts them.
 

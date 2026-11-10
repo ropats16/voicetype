@@ -8,7 +8,8 @@ import Foundation
 /// No network, no UI, no permissions, and nothing written but the report.
 enum BenchCommand {
     static func usage(_ config: Config) -> String {
-        """
+        let d = WhisperTuning.default, onOff = { (b: Bool) in b ? "on" : "off" }
+        return """
         usage: VoiceType --bench --model <file> [--engine <id>] [--manifest <manifest.tsv>]
                          [--runs <n>] [--only short|long] [--language <code>] [--threads <n>]
                          [--suppress-nst on|off] [--audio-ctx off|clip] [--temp-fallback on|off]
@@ -21,11 +22,12 @@ enum BenchCommand {
           --only      bench just the short or just the long clips
           --language  transcription language (default: config.json's, now "\(config.language)")
           --threads   engine threads, 0 = auto (default: config.json's, now \(config.threads))
-          --suppress-nst   whisper: suppress non-speech tokens (default: on)
+          --suppress-nst   whisper: suppress non-speech tokens (default: \(onOff(d.suppressNonSpeech)))
           --audio-ctx      whisper: encoder context, off = full 30 s window, clip = sized to
-                           each clip (default: off)
-          --temp-fallback  whisper: re-decode at higher temperature on a bad decode (default: on)
-          --vad            whisper: Silero VAD model file to skip silence, or off (default: off;
+                           each clip (default: \(d.audioContext.rawValue))
+          --temp-fallback  whisper: re-decode at higher temperature on a bad decode
+                           (default: \(onOff(d.temperatureFallback)))
+          --vad            whisper: Silero VAD model file to skip silence, or off (default: \(d.vad.modelPath ?? "off");
                            fetch with scripts/download_vad_model.sh)
           --json      where to write the report
                       (default: .bench/results/<time>-<engine>-<model>.json)

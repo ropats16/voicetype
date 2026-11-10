@@ -276,14 +276,14 @@ final class BenchTests: XCTestCase {
     }
 
     func testEveryTuningFlagParses() throws {
-        let t = try tuning(["--suppress-nst", "off", "--audio-ctx", "clip", "--temp-fallback", "off",
+        let t = try tuning(["--suppress-nst", "on", "--audio-ctx", "clip", "--temp-fallback", "off",
                             "--vad", "/m/ggml-silero-v6.2.0.bin"])
-        XCTAssertFalse(t.suppressNonSpeech)
+        XCTAssertTrue(t.suppressNonSpeech)
         XCTAssertEqual(t.audioContext, .sizedToClip)
         XCTAssertFalse(t.temperatureFallback)
         XCTAssertEqual(t.vad, .silero(modelPath: "/m/ggml-silero-v6.2.0.bin"))
 
-        let back = try tuning(["--suppress-nst", "on", "--audio-ctx", "off", "--temp-fallback", "on", "--vad", "off"])
+        let back = try tuning(["--suppress-nst", "off", "--audio-ctx", "off", "--temp-fallback", "on", "--vad", "off"])
         XCTAssertEqual(back, .default)
     }
 
@@ -324,6 +324,7 @@ final class BenchTests: XCTestCase {
 
     private let sampleTuning: WhisperTuning = {
         var t = WhisperTuning.default
+        t.suppressNonSpeech = true
         t.audioContext = .sizedToClip
         t.temperatureFallback = false
         return t

@@ -18,7 +18,7 @@ struct Config: Codable {
     var microphoneUID: String?      // nil = system default input
     var soundCues: Bool
     var language: String
-    var threads: Int                // 0 = auto
+    var threads: Int                // 0 = auto: performance cores, ≤ 8 (WhisperAdapter.autoThreadCount)
     var keepMicWarm: Bool           // no Settings UI: mic stays on from launch (pre-roll on every dictation)
     var keepModelWarm: Bool?        // nil = auto: unload when idle only on Macs with <= 8 GB
     var modelIdleMinutes: Double    // idle time before unloading, when not kept warm
