@@ -6,14 +6,7 @@ extension Permissions: PermissionProbe {
         isAccessibilityTrusted() ? .granted : .denied
     }
 
-    var microphone: MicrophonePermission {
-        switch micStatus {
-        case .authorized: return .authorized
-        case .denied: return .denied
-        case .restricted: return .restricted
-        case .notDetermined: return .notDetermined
-        }
-    }
+    // `microphone` is `Permissions.microphone`.
 }
 
 extension EngineReadiness {

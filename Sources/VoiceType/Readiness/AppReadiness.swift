@@ -45,7 +45,7 @@ enum ReadinessIssue: Equatable {
         }
     }
 
-    /// Short, for the menu header ("VoiceType — <title>").
+    /// Short, for the menu header and notices (`AppStatus.headline`).
     var title: String {
         switch self {
         case .accessibilityNeeded: return "Needs Accessibility"
@@ -72,10 +72,9 @@ enum ReadinessIssue: Equatable {
         case .microphoneNotDetermined:
             return "Allow VoiceType to use the microphone."
         case .modelMissing(_, let command):
-            return command.map { "Model missing — run `\($0)`" } ?? "Model file missing — see Settings"
+            return ModelHints.missing(downloadCommand: command)
         case .modelFailed(_, let command):
-            return command.map { "Model failed to load — see log, or try `\($0)` to re-download it" }
-                ?? "Model failed to load — see log"
+            return ModelHints.failed(downloadCommand: command)
         case .hotkeyTapFailed:
             return "Couldn't install the hotkey listener; retrying. Re-granting Accessibility usually fixes it."
         case .hotkeysStarting:
@@ -115,6 +114,10 @@ enum AppStatus: Equatable {
     }
 
     var title: String { issue?.title ?? "Ready" }
+
+    /// "VoiceType — <title>": the menu header, and the title of a blocked
+    /// press's notice.
+    var headline: String { "VoiceType — \(title)" }
 
     /// Whether a hotkey press should start a recording. A loading or
     /// verifying model doesn't block it (the job queues behind the load);

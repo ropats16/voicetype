@@ -14,7 +14,9 @@ import Foundation
 /// - Starting while not idle is ignored: one start cue, one timer, one capture.
 /// - A start is gated on the app's readiness, read at each press: when it
 ///   doesn't allow dictation (e.g. the mic is denied and would record
-///   silence) the press gets one notice saying why, and nothing starts.
+///   silence) nothing starts, and the press gets a notice saying why — unless
+///   the same issue was noticed less than `noticeInterval` ago with no
+///   allowed press in between (no banner per key repeat or impatient press).
 /// - Each recording gets an id; callbacks (mic start, timer, post-roll,
 ///   transcript) for any other recording are ignored, so a late one can't
 ///   stop, fail or deliver the current one.
@@ -29,6 +31,9 @@ import Foundation
 /// Main-thread only: call `handle` on main; ports call back on main.
 final class DictationSession {
     enum Phase: Equatable { case idle, recording, transcribing, delivering }
+
+    /// A blocked press re-notices the same issue at most this often.
+    static let noticeInterval: TimeInterval = 5
 
     /// What the user asked for, from the hotkeys.
     enum Intent: Equatable { case holdDown, holdUp, toggle, cancel }
@@ -57,14 +62,16 @@ final class DictationSession {
     private let delivery: DictationDelivery
     private let feedback: DictationFeedback
     private let history: DictationHistory
-    private let clock: DictationClock
+    private let clock: Clock
     private let settings: () -> DictationSettings
     private let readiness: () -> AppStatus
 
     private var state: State = .idle
     /// The running recording's max-duration timer; at most one exists.
-    private var timer: DictationTimer?
+    private var timer: ClockTimer?
     private var recordingCount = 0
+    /// The last blocked press's notice, until a press is allowed again.
+    private var lastNotice: (issue: ReadinessIssue, at: TimeInterval)?
 
     var phase: Phase {
         switch state {
@@ -76,12 +83,13 @@ final class DictationSession {
     }
 
     /// `settings` is read live: `maxSeconds` at start, `minSeconds` and
-    /// `trailingSpace` at stop. `readiness` is read at each start.
+    /// `trailingSpace` at stop. `readiness` is read at each start; no default,
+    /// so nothing dictates without a gate.
     init(capture: DictationCapture, engine: DictationEngine, delivery: DictationDelivery,
          feedback: DictationFeedback, history: DictationHistory = NoDictationHistory(),
-         clock: DictationClock = SystemDictationClock(),
+         clock: Clock = SystemClock(),
          settings: @escaping () -> DictationSettings,
-         readiness: @escaping () -> AppStatus = { .ready }) {
+         readiness: @escaping () -> AppStatus) {
         self.capture = capture
         self.engine = engine
         self.delivery = delivery
@@ -106,10 +114,10 @@ final class DictationSession {
         case (.idle, .intent(.holdDown)), (.idle, .intent(.toggle)):
             let status = readiness()
             if status.allowsDictation {
+                lastNotice = nil
                 start()
             } else if let issue = status.issue {
-                Log.info("Not dictating: \(issue.title).")
-                feedback.notify(title: "VoiceType — \(issue.title)", body: issue.detail)
+                block(status, issue)
             }
 
         // recording
@@ -185,6 +193,13 @@ final class DictationSession {
         capture.begin { [weak self] error in
             self?.handle(.micStarted(id: id, error))
         }
+    }
+
+    private func block(_ status: AppStatus, _ issue: ReadinessIssue) {
+        Log.info("Not dictating: \(issue.title).")
+        if let last = lastNotice, last.issue == issue, clock.now - last.at < Self.noticeInterval { return }
+        lastNotice = (issue, clock.now)
+        feedback.notify(title: status.headline, body: issue.detail)
     }
 
     private func stop(id: Int, startedAt: TimeInterval) {

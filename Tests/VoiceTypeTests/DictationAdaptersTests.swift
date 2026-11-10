@@ -46,15 +46,15 @@ final class DictationAdaptersTests: XCTestCase {
     }
 }
 
-/// `SystemDictationClock` against the real main run loop.
-final class SystemDictationClockTests: XCTestCase {
+/// `SystemClock` against the real main run loop.
+final class SystemClockTests: XCTestCase {
     func testTimerFiresWhileAMenuIsTracking() {
         // An open menu (the menu-bar menu) runs main in `.eventTracking`. AppKit
         // makes that a common mode in the app; this process has no NSApplication,
         // so register it the same way.
         CFRunLoopAddCommonMode(CFRunLoopGetMain(), CFRunLoopMode(RunLoop.Mode.eventTracking.rawValue as CFString))
         var fired = false
-        _ = SystemDictationClock().schedule(after: 0.01) { fired = true }
+        _ = SystemClock().schedule(after: 0.01) { fired = true }
         let deadline = Date().addingTimeInterval(1)
         while !fired && Date() < deadline {
             RunLoop.main.run(mode: .eventTracking, before: Date().addingTimeInterval(0.05))
@@ -64,7 +64,7 @@ final class SystemDictationClockTests: XCTestCase {
 
     func testCancelledTimerNeverFires() {
         var fired = false
-        let timer = SystemDictationClock().schedule(after: 0.01) { fired = true }
+        let timer = SystemClock().schedule(after: 0.01) { fired = true }
         timer.cancel()
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         XCTAssertFalse(fired)

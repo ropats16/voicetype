@@ -7,10 +7,11 @@ final class StatusMenuContentTests: XCTestCase {
     private func content(_ status: AppStatus,
                          accessibility: AccessibilityPermission = .granted,
                          microphone: MicrophonePermission = .authorized,
+                         engine: TranscriptionStatus = .ready,
                          configIssues: [ConfigIssue] = []) -> StatusMenuContent {
         let inputs = ReadinessInputs(
             accessibility: accessibility, microphone: microphone,
-            engine: EngineReadiness(status: .ready, modelPath: "/m.bin", downloadCommand: nil),
+            engine: EngineReadiness(status: engine, modelPath: "/m.bin", downloadCommand: "make model"),
             hotkeyTap: .installed)
         return StatusMenuContent(status: status, inputs: inputs, hold: "⌃⇧", toggle: "⌃⌥Space",
                                  configIssues: configIssues)
@@ -26,6 +27,7 @@ final class StatusMenuContentTests: XCTestCase {
         XCTAssertEqual(menu.hold, "Hold to talk: ⌃⇧")
         XCTAssertEqual(menu.toggle, "Toggle to talk: ⌃⌥Space")
         XCTAssertNil(menu.configIssues)
+        XCTAssertNil(menu.modelHint)
     }
 
     func testMicDeniedShowsReasonAndFix() {
@@ -59,6 +61,22 @@ final class StatusMenuContentTests: XCTestCase {
                        "Model failed to load — see log, or try `make model` to re-download it")
         XCTAssertEqual(missing.reason?.action, .openModelsFolder)
         XCTAssertEqual(failed.reason?.action, .openModelsFolder)
+    }
+
+    func testModelProblemBehindAPermissionStillShowsItsHint() {
+        let menu = content(.notReady(.accessibilityNeeded), accessibility: .denied, engine: .missing)
+        XCTAssertEqual(menu.reason?.action, .openAccessibilitySettings)
+        XCTAssertEqual(menu.modelHint, .init(title: "Model missing — run `make model`", action: .openModelsFolder))
+
+        let failed = content(.notReady(.microphoneDenied), microphone: .denied, engine: .failed(reason: "x"))
+        XCTAssertEqual(failed.modelHint?.title, "Model failed to load — see log, or try `make model` to re-download it")
+    }
+
+    func testModelHintIsNotRepeatedWhenItIsTheReason() {
+        let issue = ReadinessIssue.modelMissing(path: "/m.bin", downloadCommand: "make model")
+        let menu = content(.notReady(issue), engine: .missing)
+        XCTAssertEqual(menu.reason?.title, issue.detail)
+        XCTAssertNil(menu.modelHint)
     }
 
     func testTransientStatusHasNoReasonLine() {

@@ -7,38 +7,6 @@ final class DictationSessionTests: XCTestCase {
 
     // MARK: - Fakes
 
-    private final class ManualClock: DictationClock {
-        final class Pending: DictationTimer {
-            let due: TimeInterval
-            let action: () -> Void
-            var isCancelled = false
-            var hasFired = false
-            init(due: TimeInterval, action: @escaping () -> Void) { self.due = due; self.action = action }
-            func cancel() { isCancelled = true }
-        }
-
-        var now: TimeInterval = 1_000
-        private(set) var timers: [Pending] = []
-
-        /// Timers neither fired nor cancelled.
-        var live: [Pending] { timers.filter { !$0.isCancelled && !$0.hasFired } }
-
-        func schedule(after seconds: TimeInterval, _ action: @escaping () -> Void) -> DictationTimer {
-            let timer = Pending(due: now + seconds, action: action)
-            timers.append(timer)
-            return timer
-        }
-
-        /// Moves time on, firing every live timer that comes due.
-        func advance(by seconds: TimeInterval) {
-            now += seconds
-            for timer in timers where !timer.isCancelled && !timer.hasFired && timer.due <= now {
-                timer.hasFired = true
-                timer.action()
-            }
-        }
-    }
-
     private final class FakeCapture: DictationCapture {
         var onLevel: ((Float) -> Void)?
         private(set) var begins: [(Error?) -> Void] = []
@@ -203,14 +171,41 @@ final class DictationSessionTests: XCTestCase {
         XCTAssertEqual(feedback.events.count, 1, "Release of a blocked press does nothing")
     }
 
-    func testNotReadyBlocksToggleOncePerPress() {
+    func testRepeatedBlockedPressesNotifyOncePerWindow() {
         status = .notReady(.modelMissing(path: "/m.bin", downloadCommand: nil))
         session.handle(.toggle)
         session.handle(.toggle)
+        clock.advance(by: DictationSession.noticeInterval - 0.1)
+        session.handle(.toggle)
 
         XCTAssertTrue(capture.begins.isEmpty)
-        XCTAssertEqual(feedback.notifications, ["VoiceType — Model missing", "VoiceType — Model missing"])
+        XCTAssertEqual(feedback.notifications, ["VoiceType — Model missing"], "Same issue: one notice per window")
         XCTAssertEqual(session.phase, .idle)
+
+        clock.advance(by: 0.1)
+        session.handle(.toggle)
+        XCTAssertEqual(feedback.notifications, ["VoiceType — Model missing", "VoiceType — Model missing"],
+                       "Window over: the issue is noticed again")
+    }
+
+    func testADifferentIssueIsNoticedAtOnce() {
+        status = Self.micDenied
+        session.handle(.toggle)
+        status = .notReady(.modelMissing(path: "/m.bin", downloadCommand: nil))
+        session.handle(.toggle)
+        XCTAssertEqual(feedback.notifications, ["VoiceType — Needs Microphone", "VoiceType — Model missing"])
+    }
+
+    func testSameIssueAfterBeingReadyIsNoticedAtOnce() {
+        status = Self.micDenied
+        session.handle(.holdDown)
+        session.handle(.holdUp)
+        status = .ready
+        dictate("granted")
+        status = Self.micDenied
+        session.handle(.holdDown)
+        XCTAssertEqual(feedback.notifications, ["VoiceType — Needs Microphone", "VoiceType — Needs Microphone"],
+                       "The status changed in between, so it's news again")
     }
 
     func testLoadingOrVerifyingModelStillDictates() {
@@ -300,7 +295,7 @@ final class DictationSessionTests: XCTestCase {
         ordering.feedback = feedback
         session = DictationSession(capture: capture, engine: engine, delivery: ordering,
                                    feedback: feedback, history: history, clock: clock,
-                                   settings: { [unowned self] in settings })
+                                   settings: { [unowned self] in settings }, readiness: { .ready })
         dictate("hi")
         XCTAssertEqual(ordering.eventsAtDelivery.last, .dismiss)
     }
@@ -463,7 +458,7 @@ final class DictationSessionTests: XCTestCase {
         let reentrant = ReentrantDelivery()
         session = DictationSession(capture: capture, engine: engine, delivery: reentrant,
                                    feedback: feedback, history: history, clock: clock,
-                                   settings: { [unowned self] in settings })
+                                   settings: { [unowned self] in settings }, readiness: { .ready })
         reentrant.session = session
         dictate("hi")
         XCTAssertEqual(reentrant.phaseSeen, .delivering)

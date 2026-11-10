@@ -3,8 +3,8 @@ import Foundation
 // The seams between `DictationSession` and the rest of the app. The session
 // owns every transition rule; each port is a thin adapter over a concrete
 // piece (the mic capture, the transcription engine, text delivery, the
-// indicator + sound cues + notifications, the history store, the system
-// clock). Tests drive the session with fakes of all of them.
+// indicator + sound cues + notifications, the history store, the clock
+// — `Support/Clock.swift`). Tests drive the session with fakes of all of them.
 //
 // Every port is called on main, and must call its callbacks on main.
 
@@ -89,41 +89,6 @@ protocol DictationHistory: AnyObject {
 /// Keeps no history.
 final class NoDictationHistory: DictationHistory {
     func delivered(_ delivered: DeliveredText) {}
-}
-
-/// A scheduled one-shot callback that hasn't fired yet.
-protocol DictationTimer: AnyObject {
-    /// Stops it firing. Safe to call after it fired or more than once.
-    func cancel()
-}
-
-/// Time for the session: when a recording started, and the max-duration timer.
-protocol DictationClock: AnyObject {
-    /// Monotonic seconds (e.g. system uptime).
-    var now: TimeInterval { get }
-    /// Calls `action` once on main after `seconds`, unless cancelled first.
-    func schedule(after seconds: TimeInterval, _ action: @escaping () -> Void) -> DictationTimer
-}
-
-/// The live clock: system uptime and a main run-loop `Timer`.
-final class SystemDictationClock: DictationClock {
-    var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
-
-    /// In the common modes, not just default: while a menu is open (the
-    /// menu-bar menu) main runs in event-tracking mode, and a default-mode
-    /// timer — a clipboard restore, the max-duration stop — would wait for it
-    /// to close.
-    func schedule(after seconds: TimeInterval, _ action: @escaping () -> Void) -> DictationTimer {
-        let timer = Timer(timeInterval: seconds, repeats: false) { _ in action() }
-        RunLoop.main.add(timer, forMode: .common)
-        return RunLoopTimer(timer)
-    }
-
-    private final class RunLoopTimer: DictationTimer {
-        private let timer: Timer
-        init(_ timer: Timer) { self.timer = timer }
-        func cancel() { timer.invalidate() }
-    }
 }
 
 /// The dictation settings the session reads live: `maxSeconds` when a

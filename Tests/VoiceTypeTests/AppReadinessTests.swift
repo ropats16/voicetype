@@ -13,9 +13,11 @@ final class AppReadinessTests: XCTestCase {
     /// Stands in for `HotkeyManager`: each install attempt reports `result`.
     private final class FakeTap {
         var result: HotkeyTapHealth = .installed
-        private(set) var installs = 0
-        func install(into monitor: ReadinessMonitor) {
-            installs += 1
+        /// Clock time of each install attempt.
+        private(set) var attempts: [TimeInterval] = []
+        var installs: Int { attempts.count }
+        func install(into monitor: ReadinessMonitor, at now: TimeInterval) {
+            attempts.append(now)
             monitor.hotkeyTapChanged(result)
         }
     }
@@ -44,6 +46,7 @@ final class AppReadinessTests: XCTestCase {
     private var changes: [AppStatus] = []
     private var inputChanges: [ReadinessInputs] = []
     private var becameReady: [Bool] = []   // isFirst per transition
+    private var logs: [String] = []
 
     override func setUp() {
         super.setUp()
@@ -53,15 +56,17 @@ final class AppReadinessTests: XCTestCase {
         changes = []
         inputChanges = []
         becameReady = []
+        logs = []
     }
 
     private func makeMonitor(engine status: TranscriptionStatus = .ready) {
         monitor = ReadinessMonitor(probe: probe, clock: clock, engine: engine(status),
-                                   pollInterval: 2, readyPollInterval: 10)
+                                   pollInterval: 2, readyPollInterval: 10, maxTapRetryInterval: 60,
+                                   log: { [unowned self] in logs.append($0) })
         monitor.onChange = { [unowned self] in changes.append($0) }
         monitor.onInputsChange = { [unowned self] in inputChanges.append($0) }
         monitor.onBecameReady = { [unowned self] isFirst in becameReady.append(isFirst) }
-        monitor.onTapNeeded = { [unowned self] in tap.install(into: monitor) }
+        monitor.onTapNeeded = { [unowned self] in tap.install(into: monitor, at: clock.now) }
     }
 
     private func startMonitor(engine status: TranscriptionStatus = .ready) {
@@ -129,6 +134,28 @@ final class AppReadinessTests: XCTestCase {
                        "Model failed to load — see log")
         XCTAssertEqual(ReadinessIssue.modelFailed(reason: "x", downloadCommand: Self.download).detail,
                        "Model failed to load — see log, or try `\(Self.download)` to re-download it")
+    }
+
+    func testModelNoticesKeepTheirWording() {
+        let path = Self.modelPath, command = Self.download
+        XCTAssertEqual(ModelHints.notice(for: .missing, engine: engine(.missing)),
+                       ModelNotice(title: "VoiceType: model not found",
+                                   body: "Model file not found at \(path). Run `\(command)` to download it.",
+                                   log: "Model not found at \(path). Run `\(command)` to download it."))
+        XCTAssertEqual(ModelHints.notice(for: .missing, engine: engine(.missing, download: nil))?.body,
+                       "Model file not found at \(path).")
+        XCTAssertEqual(ModelHints.notice(for: .failed(reason: "bad"), engine: engine(.failed(reason: "bad"))),
+                       ModelNotice(title: "VoiceType: model failed to load",
+                                   body: "bad Try `\(command)` to re-download it.",
+                                   log: "Model load failed: bad"))
+        XCTAssertNil(ModelHints.notice(for: .ready, engine: engine(.ready)))
+        XCTAssertNil(ModelHints.notice(for: .loading, engine: engine(.loading)))
+    }
+
+    func testFailedSwitchNoticeSkipsTheRedownloadHint() {
+        // The engine already fell back to the previous model: a hint would
+        // name the wrong file.
+        XCTAssertEqual(ModelHints.notice(for: .failed(reason: "bad"), engine: engine(.ready))?.body, "bad")
     }
 
     func testLoadingAndVerifyingAreTransientAndStillAllowDictation() {
@@ -290,7 +317,7 @@ final class AppReadinessTests: XCTestCase {
         XCTAssertEqual(tap.installs, 2)
     }
 
-    func testFailedTapIsRetriedEachPollUntilItInstalls() {
+    func testFailedTapIsRetriedUntilItInstalls() {
         tap.result = .failed
         startMonitor()
         XCTAssertEqual(changes, [.notReady(.hotkeyTapFailed)])
@@ -301,10 +328,67 @@ final class AppReadinessTests: XCTestCase {
         XCTAssertEqual(changes.count, 1)
 
         tap.result = .installed
-        clock.advance(by: 2)
+        clock.advance(by: 4)
         XCTAssertEqual(tap.installs, 3)
         XCTAssertEqual(changes, [.notReady(.hotkeyTapFailed), .ready])
         XCTAssertEqual(becameReady, [true])
+    }
+
+    // MARK: - Monitor: tap retry backoff
+
+    /// Stale TCC after a re-sign: Accessibility reads granted, the tap never
+    /// installs. Retries back off instead of hammering every poll.
+    func testFailingTapRetriesBackOffToAMinute() {
+        tap.result = .failed
+        startMonitor()
+        for _ in 0..<150 { clock.advance(by: 2) }   // 5 min
+
+        let start = tap.attempts[0]
+        XCTAssertEqual(tap.attempts.map { $0 - start }, [0, 2, 6, 14, 30, 62, 122, 182, 242])
+        XCTAssertEqual(nextPollIn, 2, "Permissions still polled fast; only the tap backs off")
+    }
+
+    func testTapFailureIsLoggedOncePerStreak() {
+        tap.result = .failed
+        startMonitor()
+        for _ in 0..<60 { clock.advance(by: 2) }
+        XCTAssertEqual(logs.count, 1, "One log for the streak, not one per retry")
+
+        tap.result = .installed
+        clock.advance(by: 60)
+        XCTAssertEqual(monitor.status, .ready)
+
+        monitor.hotkeyTapChanged(.failed)   // a new streak
+        XCTAssertEqual(logs.count, 2)
+    }
+
+    func testSuccessResetsTheBackoff() {
+        tap.result = .failed
+        startMonitor()
+        for _ in 0..<15 { clock.advance(by: 2) }   // well into the backoff
+        tap.result = .installed
+        clock.advance(by: 60)
+        XCTAssertEqual(monitor.status, .ready)
+
+        let before = tap.installs
+        monitor.hotkeyTapChanged(.failed)
+        clock.advance(by: 2)
+        XCTAssertEqual(tap.installs, before + 1, "First retry of a new streak after one poll")
+    }
+
+    func testAccessibilityChangeResetsTheBackoff() {
+        tap.result = .failed
+        startMonitor()
+        for _ in 0..<15 { clock.advance(by: 2) }   // next retry ~30 s out
+        let before = tap.installs
+
+        probe.accessibility = .denied   // the user removes and re-adds the app
+        clock.advance(by: 2)
+        probe.accessibility = .granted
+        tap.result = .installed
+        clock.advance(by: 2)
+        XCTAssertEqual(tap.installs, before + 1, "Re-grant retries at once")
+        XCTAssertEqual(monitor.status, .ready)
     }
 
     func testTapFailureReportedLaterRearmsFastPolling() {
@@ -318,6 +402,83 @@ final class AppReadinessTests: XCTestCase {
         clock.advance(by: 2)
         XCTAssertEqual(tap.installs, 2)
         XCTAssertEqual(changes.last, .ready)
+    }
+
+    // MARK: - Monitor: paused hotkeys (Settings recorder)
+
+    func testPausedMonitorNeverRequestsATap() {
+        startMonitor()
+        monitor.pauseHotkeys()
+
+        probe.accessibility = .denied
+        clock.advance(by: 10)
+        probe.accessibility = .granted   // flips while the recorder is open
+        for _ in 0..<5 { clock.advance(by: 2) }
+        XCTAssertEqual(tap.installs, 1, "No reinstall mid-capture")
+
+        monitor.resumeHotkeys()
+        XCTAssertEqual(tap.installs, 2, "Resume reinstalls")
+        XCTAssertEqual(monitor.status, .ready)
+    }
+
+    func testResumeReinstallsTheTapFromTheNewConfig() {
+        startMonitor()
+        monitor.pauseHotkeys()
+        clock.advance(by: 10)
+        XCTAssertEqual(tap.installs, 1)
+        XCTAssertEqual(changes, [.ready], "Pausing for a capture doesn't change the status")
+
+        monitor.resumeHotkeys()
+        XCTAssertEqual(tap.installs, 2)
+        XCTAssertEqual(changes, [.ready], "No \"Starting hotkeys…\" blip")
+    }
+
+    func testResumeRetriesAFailingTapAtOnce() {
+        tap.result = .failed
+        startMonitor()
+        for _ in 0..<15 { clock.advance(by: 2) }
+        let before = tap.installs
+        monitor.resumeHotkeys()   // e.g. a rebind
+        XCTAssertEqual(tap.installs, before + 1)
+    }
+
+    // MARK: - Monitor: status for a hotkey press
+
+    func testCurrentStatusRereadsPermissions() {
+        startMonitor()
+        probe.microphone = .denied
+        XCTAssertEqual(monitor.currentStatus(), .notReady(.microphoneDenied))
+        XCTAssertEqual(changes.last, .notReady(.microphoneDenied), "Published too")
+    }
+
+    /// A press arrives inside the current tap's delivery: replacing that tap
+    /// there would be re-entrant, so the install waits for the next turn.
+    func testCurrentStatusDefersTheTapInstall() {
+        probe.accessibility = .denied
+        startMonitor()
+        probe.accessibility = .granted
+
+        XCTAssertEqual(monitor.currentStatus(), .starting(.hotkeysStarting))
+        XCTAssertEqual(tap.installs, 0, "Not from inside the press")
+
+        clock.advance(by: 0)
+        XCTAssertEqual(tap.installs, 1, "Next run-loop turn")
+        XCTAssertEqual(monitor.status, .ready)
+    }
+
+    func testDeferredInstallSurvivesALaterPush() {
+        probe.accessibility = .denied
+        startMonitor()
+        probe.accessibility = .granted
+        _ = monitor.currentStatus()
+        monitor.engineChanged(engine(.ready))   // reschedules polling
+        clock.advance(by: 0)
+        XCTAssertEqual(tap.installs, 1)
+    }
+
+    func testCurrentStatusBeforeStartFailsClosed() {
+        makeMonitor()
+        XCTAssertFalse(monitor.currentStatus().allowsDictation)
     }
 
     // MARK: - Monitor: engine pushes

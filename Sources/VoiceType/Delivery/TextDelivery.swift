@@ -28,7 +28,7 @@ final class TextDelivery: DictationDelivery {
     convenience init() {
         self.init(paster: ClipboardPaster(clipboard: SystemClipboard(),
                                           keyPoster: CGEventKeyPoster(),
-                                          clock: SystemDictationClock()),
+                                          clock: SystemClock()),
                   probe: AXFocusProbe())
     }
 

@@ -5,7 +5,7 @@ import Foundation
 // every clipboard rule (snapshot, burst, read-driven restore timing, the
 // changeCount guard, ephemeral contents) with `ClipboardSnapshot` saying what
 // a snapshot keeps. Each port is a thin adapter over a concrete piece (`NSPasteboard`, a
-// synthesized ⌘V, the Accessibility API). Time comes from `DictationClock`.
+// synthesized ⌘V, the Accessibility API). Time comes from `Clock`.
 // Tests drive both with fakes of all four.
 //
 // Every port is called on main.

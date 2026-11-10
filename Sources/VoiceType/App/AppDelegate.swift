@@ -22,9 +22,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keepWarm: configStore.config.keepMicWarm,
         maxSeconds: { [configStore] in configStore.config.maxRecordingSeconds }
     )
-    private lazy var monitor = ReadinessMonitor(probe: permissions, clock: SystemDictationClock(),
+    private lazy var monitor = ReadinessMonitor(probe: permissions, clock: SystemClock(),
                                                 engine: EngineReadiness(engine))
-    private lazy var dictation = makeDictationSession()
+    /// Built at launch, not on the first press, so the first dictation
+    /// doesn't pay for the indicator, delivery and session setup.
+    private var dictation: DictationSession?
     private var menu: StatusMenu!
     private var hotkeys: HotkeyManager?
     private var settingsWindowController: SettingsWindowController?
@@ -43,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenu()
         wireMonitor()
         startEngine()
+        dictation = makeDictationSession()
         requestPermissionsIfNeeded()
         monitor.start()
     }
@@ -97,21 +100,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard isFirst, let config = self?.configStore.config else { return }
             Log.info("VoiceType is ready. Hold \(config.hold) or press \(config.toggle) to dictate.")
         }
-        monitor.onTapNeeded = { [weak self] in self?.reloadHotkeys() }
+        monitor.onTapNeeded = { [weak self] in self?.installHotkeys() }
     }
 
     private func requestPermissionsIfNeeded() {
         permissions.requestMicrophone { [weak self] _ in self?.monitor.recheck() }
-        if !permissions.isAccessibilityTrusted(prompt: true) {
+        if !permissions.isAccessibilityTrusted() {
             Log.info("Accessibility not yet granted; prompting user.")
+            permissions.requestAccessibility()
         }
     }
 
     private func perform(_ action: ReadinessAction) {
         switch action {
         case .openAccessibilitySettings:
-            _ = permissions.isAccessibilityTrusted(prompt: true)
-            permissions.openAccessibilitySettings()
+            permissions.requestAccessibility()
         case .openMicrophoneSettings:
             permissions.openMicrophoneSettings()
         case .requestMicrophone:
@@ -162,24 +165,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func engineStatusChanged(_ status: TranscriptionStatus) {
         MainActor.assumeIsolated { settingsViewModel?.modelStatusChanged(status) }
         let readiness = EngineReadiness(engine)
-        let path = engine.model.path
-        switch status {
-        case .missing:
-            let fix = readiness.downloadCommand.map { " Run `\($0)` to download it." } ?? ""
-            Log.error("Model not found at \(path).\(fix)")
-            Notifier.notify(title: "VoiceType: model not found", body: "Model file not found at \(path).\(fix)")
-        case .failed(let reason):
-            Log.error("Model load failed: \(reason)")
-            // After a failed switch the engine is already back on the previous
-            // model (ready); a re-download hint would name the wrong file.
-            let stillFailed = { if case .failed = readiness.status { return true } else { return false } }()
-            let fix = stillFailed ? readiness.downloadCommand.map { " Try `\($0)` to re-download it." } ?? "" : ""
-            Notifier.notify(title: "VoiceType: model failed to load", body: "\(reason)\(fix)")
-        case .ready:
-            Log.info("Transcription model loaded: \(path)")
-        case .notLoaded, .verifying, .loading:
-            break
+        if let notice = ModelHints.notice(for: status, engine: readiness) {
+            Log.error(notice.log)
+            Notifier.notify(title: notice.title, body: notice.body)
         }
+        if status == .ready { Log.info("Transcription model loaded: \(readiness.modelPath)") }
         monitor.engineChanged(readiness)
     }
 
@@ -187,7 +177,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The dictation flow over the live mic, engine, paste and indicator.
     /// Settings are read live, so a change applies to the next recording; a
-    /// press only starts one when readiness allows (re-checked per press).
+    /// press only starts one when readiness allows (re-checked per press,
+    /// without installing a tap from inside the press). The session holds the
+    /// monitor, so the gate can't outlive it and fail open.
     private func makeDictationSession() -> DictationSession {
         DictationSession(
             capture: capture,
@@ -201,28 +193,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                   ceilingSeconds: AudioCapture.ceilingSeconds,
                                   trailingSpace: configStore.config.trailingSpace)
             },
-            readiness: { [weak self] in
-                guard let monitor = self?.monitor else { return .ready }
-                monitor.recheck()
-                return monitor.status
-            }
+            readiness: monitor.currentStatus
         )
     }
 
     /// (Re)installs the hotkey tap from the current config and reports the
-    /// outcome to the monitor, which retries a failure on its next poll.
-    private func reloadHotkeys() {
+    /// outcome to the monitor, which retries a failure with backoff. Only the
+    /// monitor calls this (`onTapNeeded`).
+    private func installHotkeys() {
         hotkeys?.stop()
         hotkeys = nil
         let config = configStore.config
         let manager = HotkeyManager(hold: config.hold, toggle: config.toggle, cancelKeyCode: config.cancelKeyCode)
-        manager.onHoldStart = { [weak self] in self?.dictation.handle(.holdDown) }
-        manager.onHoldStop = { [weak self] in self?.dictation.handle(.holdUp) }
-        manager.onTogglePress = { [weak self] in self?.dictation.handle(.toggle) }
-        manager.onCancel = { [weak self] in self?.dictation.handle(.cancel) }
+        manager.onHoldStart = { [weak self] in self?.dictation?.handle(.holdDown) }
+        manager.onHoldStop = { [weak self] in self?.dictation?.handle(.holdUp) }
+        manager.onTogglePress = { [weak self] in self?.dictation?.handle(.toggle) }
+        manager.onCancel = { [weak self] in self?.dictation?.handle(.cancel) }
         let started = manager.start()
         if started { hotkeys = manager }
         monitor.hotkeyTapChanged(started ? .installed : .failed)
+    }
+
+    /// The Settings recorder is capturing keys: take the tap down, and keep
+    /// the monitor from putting it back until `monitor.resumeHotkeys()`.
+    private func pauseHotkeys() {
+        hotkeys?.stop()
+        hotkeys = nil
+        monitor.pauseHotkeys()
     }
 
     // MARK: - Menu actions
@@ -239,9 +236,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     presentModelFilenames: { ModelSelection.presentFilenames() },
                     onNeedsMenuRefresh: { [weak self] in self?.refreshMenu() },
                     // Suspends the tap during live hotkey capture so it doesn't
-                    // swallow the chosen key; `reloadHotkeys` brings it back.
-                    pauseHotkeys: { [weak self] in self?.hotkeys?.stop() },
-                    reloadHotkeys: { [weak self] in self?.reloadHotkeys() },
+                    // swallow the chosen key; resuming reinstalls it from the
+                    // (possibly rebound) config.
+                    pauseHotkeys: { [weak self] in self?.pauseHotkeys() },
+                    reloadHotkeys: { [weak self] in self?.monitor.resumeHotkeys() },
                     hardware: .current,
                     currentModel: { [engine] in engine.model },
                     modelStatus: engine.status,

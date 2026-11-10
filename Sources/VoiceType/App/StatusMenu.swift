@@ -1,7 +1,8 @@
 import AppKit
 
 /// What the menu-bar menu shows: the status header, why the app isn't ready
-/// (with a fix), the permission rows, the hotkeys and any config problem.
+/// (with a fix), a model problem the reason line doesn't already cover, the
+/// permission rows, the hotkeys and any config problem.
 /// Pure, so it's tested without AppKit.
 struct StatusMenuContent: Equatable {
     /// A line; clickable when it has an action.
@@ -15,6 +16,9 @@ struct StatusMenuContent: Equatable {
     var symbol: String
     /// Only for a status that needs the user; a transient one is in the header.
     var reason: Row?
+    /// A missing or broken model ranked behind another issue (e.g. Accessibility
+    /// denied), so it isn't lost until that one is fixed.
+    var modelHint: Row?
     var microphone: Row
     var accessibility: Row
     var hold: String
@@ -23,7 +27,7 @@ struct StatusMenuContent: Equatable {
 
     init(status: AppStatus, inputs: ReadinessInputs, hold: String, toggle: String,
          configIssues: [ConfigIssue]) {
-        header = "VoiceType — \(status.title)"
+        header = status.headline
         if case .notReady(let issue) = status {
             symbol = "mic.slash"
             reason = Row(title: issue.detail, action: issue.action)
@@ -31,6 +35,10 @@ struct StatusMenuContent: Equatable {
             symbol = "mic"
             reason = nil
         }
+        let modelIssue = AppReadiness.issues(for: inputs).first {
+            switch $0 { case .modelMissing, .modelFailed: return true; default: return false }
+        }
+        modelHint = modelIssue.flatMap { $0 == status.issue ? nil : Row(title: $0.detail, action: $0.action) }
 
         switch inputs.microphone {
         case .authorized: microphone = Row(title: "Microphone: Granted", action: nil)
@@ -64,6 +72,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let header = StatusMenu.label()
     private let reason = NSMenuItem()
+    private let modelHint = NSMenuItem()
     private let microphone = NSMenuItem()
     private let accessibility = NSMenuItem()
     private let hold = StatusMenu.label()
@@ -75,12 +84,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         super.init()
         menu.autoenablesItems = false
         menu.delegate = self
-        for row in [reason, microphone, accessibility] {
+        for row in [reason, modelHint, microphone, accessibility] {
             row.target = self
             row.action = #selector(rowClicked(_:))
         }
         menu.items = [
-            header, reason, .separator(),
+            header, reason, modelHint, .separator(),
             microphone, accessibility, .separator(),
             hold, toggle,
             item("Settings…", #selector(openSettings), key: ","),
@@ -95,6 +104,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     func render(_ content: StatusMenuContent) {
         header.title = content.header
         set(reason, content.reason)
+        set(modelHint, content.modelHint)
         set(microphone, content.microphone)
         set(accessibility, content.accessibility)
         hold.title = content.hold

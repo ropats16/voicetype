@@ -46,7 +46,8 @@ final class HotkeyManager {
     deinit { stop() }
 
     /// Installs the event tap. Returns false if creation failed (almost always
-    /// missing Accessibility permission).
+    /// missing or stale Accessibility permission); the caller reports it — the
+    /// readiness monitor logs a failing streak once and retries with backoff.
     @discardableResult
     func start() -> Bool {
         guard tap == nil else { return true }
@@ -56,10 +57,7 @@ final class HotkeyManager {
         let delivery = delivery, generation = delivery.generation
         guard let tap = EventTapThread(edges: edges, deliver: { actions in
             DispatchQueue.main.async { delivery.deliver(actions, generation: generation) }
-        }) else {
-            Log.error("Failed to create event tap (Accessibility not granted?)")
-            return false
-        }
+        }) else { return false }
         self.tap = tap
         Log.info("Hotkey event tap installed.")
         return true

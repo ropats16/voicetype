@@ -67,7 +67,7 @@ final class ClipboardPaster {
 
     private let clipboard: Clipboard
     private let keyPoster: KeyPoster
-    private let clock: DictationClock
+    private let clock: Clock
 
     /// The restore owed to the user while a burst is in flight.
     private struct Pending {
@@ -85,7 +85,7 @@ final class ClipboardPaster {
         /// The restore if the latest write is never read.
         let unreadDue: TimeInterval
         var firstReadAt: TimeInterval?
-        var timer: DictationTimer?
+        var timer: ClockTimer?
 
         var due: TimeInterval {
             max(floor, firstReadAt.map { $0 + Timing.readGrace } ?? unreadDue)
@@ -94,7 +94,7 @@ final class ClipboardPaster {
     private var pending: Pending?
     private var writes = 0
 
-    init(clipboard: Clipboard, keyPoster: KeyPoster, clock: DictationClock) {
+    init(clipboard: Clipboard, keyPoster: KeyPoster, clock: Clock) {
         self.clipboard = clipboard
         self.keyPoster = keyPoster
         self.clock = clock

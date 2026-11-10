@@ -8,22 +8,10 @@ import ApplicationServices
 /// - **Accessibility** (`AXIsProcessTrusted`) — for the global event tap,
 ///   the focused-field check, and synthetic ⌘V paste.
 final class Permissions {
-    enum MicStatus {
-        case authorized, denied, notDetermined, restricted
+    private var hasPromptedForAccessibility = false
 
-        init(_ status: AVAuthorizationStatus) {
-            switch status {
-            case .authorized: self = .authorized
-            case .denied: self = .denied
-            case .restricted: self = .restricted
-            case .notDetermined: self = .notDetermined
-            @unknown default: self = .denied
-            }
-        }
-    }
-
-    var micStatus: MicStatus {
-        MicStatus(AVCaptureDevice.authorizationStatus(for: .audio))
+    var microphone: MicrophonePermission {
+        MicrophonePermission(AVCaptureDevice.authorizationStatus(for: .audio))
     }
 
     /// Whether the process is trusted for Accessibility. Pass `prompt: true`
@@ -34,10 +22,26 @@ final class Permissions {
         return AXIsProcessTrustedWithOptions(options)
     }
 
+    /// Asks for Accessibility, one way per call. The first time this run (and
+    /// only while not trusted) it shows the system prompt, which also adds
+    /// the app to the Accessibility list — opening Settings alone wouldn't,
+    /// leaving nothing to switch on — and has its own "Open System Settings"
+    /// button. After that, or while the app reads as trusted but the tap
+    /// still fails (a stale grant after a re-sign: no prompt would show), it
+    /// opens System Settings.
+    func requestAccessibility() {
+        if !hasPromptedForAccessibility && !isAccessibilityTrusted() {
+            hasPromptedForAccessibility = true
+            _ = isAccessibilityTrusted(prompt: true)
+        } else {
+            openAccessibilitySettings()
+        }
+    }
+
     /// Request microphone access. The system prompt only appears when status is
     /// `.notDetermined`; otherwise the completion fires with the current state.
     func requestMicrophone(_ completion: @escaping (Bool) -> Void) {
-        switch micStatus {
+        switch microphone {
         case .authorized:
             completion(true)
         case .notDetermined:
@@ -62,6 +66,18 @@ final class Permissions {
     private func open(_ urlString: String) {
         if let url = URL(string: urlString) {
             NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+extension MicrophonePermission {
+    init(_ status: AVAuthorizationStatus) {
+        switch status {
+        case .authorized: self = .authorized
+        case .denied: self = .denied
+        case .restricted: self = .restricted
+        case .notDetermined: self = .notDetermined
+        @unknown default: self = .denied
         }
     }
 }
