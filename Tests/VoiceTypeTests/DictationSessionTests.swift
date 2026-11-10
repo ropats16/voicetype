@@ -139,6 +139,7 @@ final class DictationSessionTests: XCTestCase {
     private var feedback: FakeFeedback!
     private var history: FakeHistory!
     private var settings: DictationSettings!
+    private var status: AppStatus = .ready
     private var session: DictationSession!
 
     override func setUp() {
@@ -151,9 +152,11 @@ final class DictationSessionTests: XCTestCase {
         history = FakeHistory()
         settings = DictationSettings(minSeconds: 0.3, maxSeconds: 600,
                                      ceilingSeconds: AudioCapture.ceilingSeconds, trailingSpace: false)
+        status = .ready
         session = DictationSession(
             capture: capture, engine: engine, delivery: delivery, feedback: feedback,
-            history: history, clock: clock, settings: { [unowned self] in settings }
+            history: history, clock: clock, settings: { [unowned self] in settings },
+            readiness: { [unowned self] in status }
         )
     }
 
@@ -179,6 +182,65 @@ final class DictationSessionTests: XCTestCase {
         XCTAssertEqual(clock.timers.count, 1)
         XCTAssertEqual(capture.begins.count, 1)
         XCTAssertEqual(engine.prewarms, 1)
+    }
+
+    // MARK: - Readiness gate
+
+    private static let micDenied = AppStatus.notReady(.microphoneDenied)
+
+    func testNotReadyBlocksHoldWithOneNotice() {
+        status = Self.micDenied
+        session.handle(.holdDown)
+
+        XCTAssertEqual(session.phase, .idle)
+        XCTAssertTrue(capture.begins.isEmpty, "A denied mic would record silence")
+        XCTAssertEqual(engine.prewarms, 0)
+        XCTAssertTrue(clock.timers.isEmpty)
+        XCTAssertEqual(feedback.events, [.notify("VoiceType — Needs Microphone",
+                                                 ReadinessIssue.microphoneDenied.detail)])
+
+        session.handle(.holdUp)
+        XCTAssertEqual(feedback.events.count, 1, "Release of a blocked press does nothing")
+    }
+
+    func testNotReadyBlocksToggleOncePerPress() {
+        status = .notReady(.modelMissing(path: "/m.bin", downloadCommand: nil))
+        session.handle(.toggle)
+        session.handle(.toggle)
+
+        XCTAssertTrue(capture.begins.isEmpty)
+        XCTAssertEqual(feedback.notifications, ["VoiceType — Model missing", "VoiceType — Model missing"])
+        XCTAssertEqual(session.phase, .idle)
+    }
+
+    func testLoadingOrVerifyingModelStillDictates() {
+        for allowed in [AppStatus.starting(.modelLoading), .starting(.modelVerifying)] {
+            status = allowed
+            dictate("hi")
+        }
+        XCTAssertEqual(delivery.delivered, ["hi", "hi"])
+        XCTAssertTrue(feedback.notifications.isEmpty)
+    }
+
+    func testReadinessReadAtEachStart() {
+        status = Self.micDenied
+        session.handle(.holdDown)
+        session.handle(.holdUp)
+        status = .ready
+        dictate("granted now")
+        XCTAssertEqual(delivery.delivered, ["granted now"])
+    }
+
+    func testReadinessNotConsultedMidRecording() {
+        session.handle(.holdDown)
+        capture.started()
+        status = Self.micDenied     // revoked while talking: this one finishes
+        clock.advance(by: 2)
+        session.handle(.holdUp)
+        capture.finishEnd()
+        engine.finish(text: "done")
+        XCTAssertEqual(delivery.delivered, ["done"])
+        XCTAssertTrue(feedback.notifications.isEmpty)
     }
 
     // MARK: - Hold to talk, end to end

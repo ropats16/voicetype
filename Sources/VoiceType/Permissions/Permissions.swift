@@ -34,10 +34,6 @@ final class Permissions {
         return AXIsProcessTrustedWithOptions(options)
     }
 
-    var allGranted: Bool {
-        micStatus == .authorized && isAccessibilityTrusted(prompt: false)
-    }
-
     /// Request microphone access. The system prompt only appears when status is
     /// `.notDetermined`; otherwise the completion fires with the current state.
     func requestMicrophone(_ completion: @escaping (Bool) -> Void) {

@@ -12,6 +12,9 @@ import Foundation
 ///
 /// Rules worth knowing:
 /// - Starting while not idle is ignored: one start cue, one timer, one capture.
+/// - A start is gated on the app's readiness, read at each press: when it
+///   doesn't allow dictation (e.g. the mic is denied and would record
+///   silence) the press gets one notice saying why, and nothing starts.
 /// - Each recording gets an id; callbacks (mic start, timer, post-roll,
 ///   transcript) for any other recording are ignored, so a late one can't
 ///   stop, fail or deliver the current one.
@@ -56,6 +59,7 @@ final class DictationSession {
     private let history: DictationHistory
     private let clock: DictationClock
     private let settings: () -> DictationSettings
+    private let readiness: () -> AppStatus
 
     private var state: State = .idle
     /// The running recording's max-duration timer; at most one exists.
@@ -72,11 +76,12 @@ final class DictationSession {
     }
 
     /// `settings` is read live: `maxSeconds` at start, `minSeconds` and
-    /// `trailingSpace` at stop.
+    /// `trailingSpace` at stop. `readiness` is read at each start.
     init(capture: DictationCapture, engine: DictationEngine, delivery: DictationDelivery,
          feedback: DictationFeedback, history: DictationHistory = NoDictationHistory(),
          clock: DictationClock = SystemDictationClock(),
-         settings: @escaping () -> DictationSettings) {
+         settings: @escaping () -> DictationSettings,
+         readiness: @escaping () -> AppStatus = { .ready }) {
         self.capture = capture
         self.engine = engine
         self.delivery = delivery
@@ -84,6 +89,7 @@ final class DictationSession {
         self.history = history
         self.clock = clock
         self.settings = settings
+        self.readiness = readiness
         capture.onLevel = { [weak self] level in
             guard let self, case .recording = state else { return }
             self.feedback.showLevel(level)
@@ -98,7 +104,13 @@ final class DictationSession {
         switch (state, event) {
         // idle
         case (.idle, .intent(.holdDown)), (.idle, .intent(.toggle)):
-            start()
+            let status = readiness()
+            if status.allowsDictation {
+                start()
+            } else if let issue = status.issue {
+                Log.info("Not dictating: \(issue.title).")
+                feedback.notify(title: "VoiceType — \(issue.title)", body: issue.detail)
+            }
 
         // recording
         case (.recording(let id, let startedAt, _), .intent(.holdUp)),

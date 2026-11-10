@@ -138,8 +138,8 @@ final class SettingsViewModel: ObservableObject {
         maxDictationSeconds = seconds
     }
 
-    /// Persists the selected microphone UID (nil = system default) and triggers a
-    /// menu rebuild so the status item reflects the new choice.
+    /// Persists the selected microphone UID (nil = system default) and refreshes
+    /// the status menu.
     func selectMic(_ uid: String?) {
         configStore.update { $0.microphoneUID = uid }
         selectedMicUID = uid

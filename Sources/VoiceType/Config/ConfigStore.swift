@@ -11,11 +11,6 @@ final class ConfigStore {
         self.config = ConfigStore.load(from: url)
     }
 
-    /// Re-read from disk (used when the user edits the file manually).
-    func reload() {
-        config = ConfigStore.load(from: url)
-    }
-
     func save() {
         Paths.ensureDirectories()
         let encoder = JSONEncoder()
