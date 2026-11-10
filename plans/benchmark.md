@@ -170,7 +170,7 @@ the key set is fixed per `schemaVersion`.
                "modelBytes": 77704715 },       // directories summed; null if no such path
   "build":   { "configuration": "release", "gitSHA": "e344a97-dirty" },  // null without --git-sha
   "settings": { "shortRuns": 3, "language": "en", "threads": 0,
-                "whisper": { "suppressNonSpeech": true, "audioContext": "off",   // "off" | "clip"
+                "whisper": { "suppressNonSpeech": false, "audioContext": "off",   // "off" | "clip"
                              "temperatureFallback": true,
                              "vad": null } },   // null = off, else the Silero model path
   "results": {
@@ -227,3 +227,149 @@ engine without a model file still needs some path (e.g. its asset directory).
   `Bench/BenchManifest.swift` — manifest parsing.
 - Tests: `BenchTests` (fake adapter on a fake clock — exact timings),
   `WordErrorRateTests`.
+
+## Whisper tuning (#7) — results
+
+Run 2026-11-10 on an Apple M3 Max (Mac15,9, 12P + 4E, 48 GiB), macOS 26.7.2
+(25G332), release build, plugged in, every run thermal `nominal` unless noted.
+Primary model **medium.en** (the app default; 1.43 GiB), with **tiny.en** as the
+lighter-Mac reference. Fixtures: the standard manifest (8 short clips, 127
+words; 623 s long clip, 1754 words), `--runs 3`.
+
+- Sweep binary: `c3663f7` (chunk 1: knobs + flags). "Before" = bc37815's
+  decoding, reproduced by flags: `--suppress-nst off --audio-ctx off
+  --temp-fallback on --vad off --threads 0` (auto = min(16, 8) = 8).
+- "After" binary: `94b6675` (these defaults), no tuning flags, `--threads 0`
+  (auto = min(12 P-cores, 8) = 8).
+- Method: one knob at a time vs the baseline. Each config ran twice, in
+  opposite orders (round 1 A→Z, round 2 Z→A), ≥ 45 s idle between runs and
+  only once the thermal state was back to `nominal` and no other build/test was
+  running; the table averages the two rounds (they agreed within ~5 ms). An
+  earlier sweep without cool-downs drifted by up to 2× as the Mac heated
+  (`fair`), so ignore single uncooled runs.
+
+### Before / after
+
+| model | build | load | short p50 | short p90 | long RTF | peak mem | short WER | long WER |
+|---|---|---|---|---|---|---|---|---|
+| medium.en | before (bc37815 decoding) | 0.67 s | 296 ms | 325 ms | 0.0311 (32×) | 2,094 MiB | 3.1% (4/127) | 3.19% (56/1754) |
+| medium.en | **after** (94b6675) | 0.67 s | 290 ms | 323 ms | 0.0311 (32×) | 2,096 MiB | 3.1% (4/127) | 3.19% (56/1754) |
+| tiny.en | before | 0.11 s | 36 ms | 43 ms | 0.0051 | 499 MiB | 3.1% (4/127) | 6.21% (109/1754) |
+| tiny.en | **after** | 0.13 s | 36 ms | 43 ms | 0.0049 | 498 MiB | 3.1% (4/127) | 6.21% (109/1754) |
+
+Same speed and accuracy: on this Mac no knob bought latency without costing
+accuracy, so the shipped decoding stays whisper.cpp's own. What #7 changes is
+correctness: non-speech tags never reach the text (`NonSpeechFilter`), whisper/ggml
+logs are silenced, and `suppress_nst` — which chunk 1 had turned on — is off
+again, keeping `:` `/` quotes etc. in dictation.
+
+### Per-knob sweep (vs baseline)
+
+medium.en:
+
+| config | load | short p50 | short p90 | long RTF | peak mem | short WER | long WER |
+|---|---|---|---|---|---|---|---|
+| baseline | 0.67 s | 296 ms | 325 ms | 0.0311 | 2,094 MiB | 3.1% (4/127) | 3.19% (56/1754) |
+| suppress-nst on | 0.64 s | 292 ms | 324 ms | 0.0310 | 2,096 MiB | 3.1% (4/127) | 3.36% (59/1754) |
+| audio-ctx clip | 0.60 s | 198 ms | 5,467 ms | — | 2,283 MiB | **16.5%** (21/127) | — |
+| audio-ctx clip + temp-fallback off | 0.54 s | 177 ms | 981 ms | — | 1,986 MiB | **174.8%** (222/127) | — |
+| temp-fallback off | 0.67 s | 291 ms | 324 ms | 0.0311 | 2,095 MiB | 3.1% (4/127) | 3.19% (56/1754) |
+| VAD (Silero v6.2.0) | 0.45 s | 305 ms | 342 ms | 0.0325 | 2,129 MiB | 3.1% (4/127) | 3.65% (64/1754) |
+| threads 1 | 0.68 s | 296 ms | 329 ms | 0.0319 | 2,096 MiB | 3.1% | 3.19% |
+| threads 2 | 0.67 s | 294 ms | 327 ms | 0.0314 | 2,095 MiB | 3.1% | 3.19% |
+| threads 4 | 0.67 s | 292 ms | 323 ms | 0.0313 | 2,095 MiB | 3.1% | 3.19% |
+| threads 6 | 0.68 s | 290 ms | 323 ms | 0.0311 | 2,096 MiB | 3.1% | 3.19% |
+| threads 8 (= baseline) | 0.67 s | 296 ms | 325 ms | 0.0311 | 2,094 MiB | 3.1% | 3.19% |
+| threads 12 | 0.67 s | 288 ms | 323 ms | 0.0311 | 2,096 MiB | 3.1% | 3.19% |
+
+tiny.en (direction check):
+
+| config | load | short p50 | short p90 | long RTF | short WER | long WER |
+|---|---|---|---|---|---|---|
+| baseline | 0.11 s | 36 ms | 43 ms | 0.0051 | 3.1% (4/127) | 6.21% (109/1754) |
+| suppress-nst on | 0.10 s | 36 ms | 44 ms | 0.0050 | 3.1% | 6.04% (106/1754) |
+| audio-ctx clip | 0.12 s | 31 ms | 49 ms | — | **13.4%** (17/127) | — |
+| temp-fallback off | 0.11 s | 35 ms | 43 ms | 0.0049 | 3.1% | 6.21% |
+| VAD | 0.08 s | 51 ms | 66 ms | 0.0070 | 2.4% (3/127) | **7.24%** (127/1754) |
+| threads 2 / 4 / 12 | 0.11–0.12 s | 37 / 35 / 35 ms | 46 / 44 / 42 ms | 0.0053 / 0.0050 / 0.0048 | 3.1% | 6.21% |
+
+`audio-ctx clip` is short-clip only (it has no effect on the 623 s clip). Its
+row on medium.en is one round from the uncooled sweep (nominal throughout); the
+p90 is a clip (3570-5694-0001) re-decoding for ~8 s per run. With fallback off
+too, a clip decodes into a repetition loop (WER 175%). VAD's load looks faster
+only because its 1 s silent warm-up skips the encoder (see below).
+
+### Silence and noise
+
+A scratch manifest of 3/8 s digital silence, 5 s white noise at −45 and
+−30 dBFS, 8 s brown noise at −30 dBFS, and the JFK clip with 1 s of noise before
+and 6 s after (empty references, so any word is an insertion). Median of 3
+runs; `∅` = empty output.
+
+| model · config | silence 3 s | silence 8 s | white −45 | white −30 | brown −30 | JFK + 6 s tail |
+|---|---|---|---|---|---|---|
+| medium · baseline (nst off, fallback on) = **after** | 205 ms ∅ | 206 ms ∅ | 198 ms ∅ | 193 ms ∅ | 187 ms ∅ | 323 ms, 0% WER |
+| medium · fallback off | 206 ms ∅ | 207 ms ∅ | 200 ms ∅ | 194 ms ∅ | 189 ms ∅ | 326 ms, 0% WER |
+| medium · nst on | 175 ms **“you”** | 176 ms **“you”** | 169 ms ∅ | 175 ms ∅ | 188 ms ∅ | 325 ms, 0% WER |
+| medium · nst on, fallback off | 175 ms **“you”** | 176 ms **“you”** | 170 ms ∅ | 176 ms ∅ | 189 ms ∅ | 326 ms, 0% WER |
+| medium · nst on, VAD | 7 ms ∅ | 18 ms ∅ | 11 ms ∅ | 10 ms ∅ | 16 ms ∅ | 359 ms, 0% WER |
+| tiny · baseline | 21 ms ∅ | 22 ms ∅ | 21 ms ∅ | 19 ms ∅ | 22 ms ∅ | 46 ms, 0% WER |
+| tiny · fallback off | 21 ms ∅ | 22 ms ∅ | 21 ms ∅ | 20 ms ∅ | 22 ms ∅ | 46 ms, 0% WER |
+| tiny · nst on | 16 ms ∅ | 17 ms ∅ | 26 ms ∅ | 26 ms ∅ | 19 ms ∅ | 46 ms, 0% WER |
+| tiny · VAD | 6 ms ∅ | 18 ms ∅ | 11 ms ∅ | 11 ms ∅ | 17 ms ∅ | 86 ms, 0% WER |
+
+- Temperature fallback costs nothing on silence or noise in release builds
+  (the 8.5 s seen in a debug build didn't reproduce on either model).
+- With `suppress_nst` off, medium.en decodes digital silence to
+  `[BLANK_AUDIO]`, which `NonSpeechFilter` drops (empty output). With it on,
+  that token is banned and the model says "you" instead — a hallucination that
+  would be pasted.
+- VAD makes empty clips 10–30× cheaper (no encoder run) and removes the "you",
+  but adds 35–40 ms to a clip that has speech.
+
+### Decisions
+
+Tolerance (agreed for #7): adopt a knob only if short-clip WER regresses by
+≤ 0.5 percentage points absolute vs baseline **and** latency improves
+meaningfully; threads: the faster at equal WER. Note 1 word on the short set is
+0.79 pp, so in practice "no extra short-clip errors".
+
+| knob | decision | why |
+|---|---|---|
+| `suppress_nst` | **off** (chunk 1 had on) | No latency or short-WER change; long WER +0.17 pp on medium (−0.17 on tiny: noise). But its token list (`whisper.cpp`'s `non_speech_tokens`) bans `"` `#` `(` `)` `*` `+` `/` `:` `;` `<` `=` `>` `@` `[` `]` `_` `{` `|` `}` `~` `--` — "3:30", "and/or", quotes, emails — and turns silence into "you" on medium. Tags are kept out by `NonSpeechFilter` instead (now also `*sighs*`-style captions). |
+| `audio_ctx` sized to clip | **rejected** | −98 ms p50 (−33%), but short WER +13.4 pp (medium) / +10.2 pp (tiny) and an 8 s tail: far outside 0.5 pp. |
+| temperature fallback off | **rejected** (stays on) | No latency gain (−5 ms p50, within noise; RTF equal), equal WER; fallback is what rescues bad decodes (with `audio_ctx` clip, turning it off went 16.5% → 175% WER). |
+| Silero VAD | **rejected** (flag kept for later) | Short WER equal but no latency gain: +9 ms p50 on medium, +15 ms on tiny; long WER +0.46 pp medium / +1.03 pp tiny (segments decoded without their neighbours' context; RTF +5% / +37%). Its win is only empty/silent clips, already handled (empty output) without it. Shipping it would also need the Silero model provisioned in-app. |
+| threads | **auto = performance cores, ≤ 8** (`WhisperAdapter.autoThreadCount`) | 1–12 threads within noise on both models (Metal does the work; ≤ ±3% p50, long RTF 0.0311–0.0319 medium). 8 stays on this Mac (min(12 P, 8)), so this is the benched config; the old rule, min(all cores, 8), would put efficiency cores in the pool on 4P+4E Macs, where they'd only lag ggml's per-op barriers. Unmeasured on those Macs. |
+
+If VAD is revisited (e.g. for long meeting audio with lots of silence): the
+engine's warm-up feeds 1 s of silence, which VAD skips entirely, so the encoder
+and decoder pipelines aren't compiled until the first real dictation (the 0.00 s
+warm-up above). The warm-up would need a non-silent signal, or to bypass VAD.
+
+### Commands
+
+```sh
+W=.bench/results/issue-7; mkdir -p "$W"
+M="$HOME/Library/Application Support/VoiceType/models"
+VAD="$(bash scripts/download_vad_model.sh)"
+SHA="$(git describe --always --dirty)"
+bench() { .build/release/VoiceType --bench --git-sha "$SHA" --runs 3 --threads "${T:-0}" "$@"; }
+
+# before (on c3663f7): bc37815's decoding
+bench --model "$M/ggml-medium.en.bin" --suppress-nst off --audio-ctx off --temp-fallback on --vad off --json "$W/before.json"
+# one knob at a time (each flag once; the first occurrence wins)
+bench --model "$M/ggml-medium.en.bin" --suppress-nst on  --audio-ctx off  --temp-fallback on  --vad off --json "$W/nst.json"
+bench --model "$M/ggml-medium.en.bin" --suppress-nst off --audio-ctx clip --temp-fallback on  --vad off --only short --json "$W/ctx.json"
+bench --model "$M/ggml-medium.en.bin" --suppress-nst off --audio-ctx off  --temp-fallback off --vad off --json "$W/tfoff.json"
+bench --model "$M/ggml-medium.en.bin" --suppress-nst off --audio-ctx off  --temp-fallback on  --vad "$VAD" --json "$W/vad.json"
+# threads: T=1 / 2 / 4 / 6 / 12 with the before flags, e.g.
+T=4 bench --model "$M/ggml-medium.en.bin" --suppress-nst off --audio-ctx off --temp-fallback on --vad off --json "$W/thr4.json"
+# after (on 94b6675): the app's defaults
+bench --model "$M/ggml-medium.en.bin" --json "$W/after.json"
+# tiny.en: the same with ggml-tiny.en.bin; silence/noise: --manifest <scratch manifest> --only short
+```
+
+Between runs: wait ≥ 45 s, for thermal `nominal`, and for no other compile/test
+to be running. The bench takes the **first** occurrence of a flag, so a sweep
+script mustn't append overrides after a base set of flags.
