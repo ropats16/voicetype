@@ -2,9 +2,9 @@ import Foundation
 
 // The seams between `DictationSession` and the rest of the app. The session
 // owns every transition rule; each port is a thin adapter over a concrete
-// piece (the mic capture, the transcription engine, the paste/clipboard
-// inserter, the indicator + sound cues + notifications, the history store,
-// the system clock). Tests drive the session with fakes of all of them.
+// piece (the mic capture, the transcription engine, text delivery, the
+// indicator + sound cues + notifications, the history store, the system
+// clock). Tests drive the session with fakes of all of them.
 //
 // Every port is called on main, and must call its callbacks on main.
 
@@ -43,12 +43,22 @@ enum DeliveryOutcome: Equatable {
     case pasted
     /// No editable field was focused: left on the clipboard for the user.
     case copied
+    /// Nothing left after cleanup (silence, tag-only): nothing delivered.
+    case droppedEmpty
 }
 
-/// Puts the final text where the user wants it (paste at the caret, or the
-/// clipboard when nothing editable is focused) and says which it did.
+/// What one delivery did, and with which text.
+struct DeliveryReport: Equatable {
+    let outcome: DeliveryOutcome
+    /// The cleaned text that reached the user; "" when dropped.
+    let text: String
+}
+
+/// Cleans a raw transcript and puts it where the user wants it (paste at the
+/// caret, or the clipboard when nothing editable is focused), or drops it
+/// when nothing is left; says which it did.
 protocol DictationDelivery: AnyObject {
-    func deliver(_ text: String) -> DeliveryOutcome
+    func deliver(_ transcript: String, trailingSpace: Bool) -> DeliveryReport
 }
 
 /// What the user sees and hears: the indicator, sound cues, notifications.

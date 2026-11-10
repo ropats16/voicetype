@@ -284,7 +284,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DictationSession(
             capture: capture,
             engine: EngineDictationAdapter(engine),
-            delivery: PasteDelivery(),
+            delivery: TextDelivery(),
             feedback: IndicatorFeedback(soundCues: SoundCues(isEnabled: { [configStore] in
                 configStore.config.soundCues
             })),

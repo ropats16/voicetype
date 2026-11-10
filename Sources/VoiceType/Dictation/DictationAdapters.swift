@@ -21,41 +21,6 @@ final class EngineDictationAdapter: DictationEngine {
     }
 }
 
-/// Pastes at the caret, or leaves the text on the clipboard when the focused
-/// element isn't editable. `.unknown` (no focused element exposed, e.g. an
-/// Electron app whose AX tree isn't up yet) pastes anyway: best-effort ⌘V is
-/// what users expect and works in every app we've seen.
-final class PasteDelivery: DictationDelivery {
-    private let focusVerdict: () -> CaretLocator.FocusVerdict
-    private let paste: (String) -> Void
-    private let copy: (String) -> Void
-
-    init(focusVerdict: @escaping () -> CaretLocator.FocusVerdict,
-         paste: @escaping (String) -> Void,
-         copy: @escaping (String) -> Void) {
-        self.focusVerdict = focusVerdict
-        self.paste = paste
-        self.copy = copy
-    }
-
-    convenience init(caretLocator: CaretLocator = CaretLocator(), inserter: TextInserter = TextInserter()) {
-        self.init(focusVerdict: { caretLocator.focusVerdict() },
-                  paste: { inserter.insert($0) },
-                  copy: { inserter.copyOnly($0) })
-    }
-
-    func deliver(_ text: String) -> DeliveryOutcome {
-        switch focusVerdict() {
-        case .editable, .unknown:
-            paste(text)
-            return .pasted
-        case .notEditable:
-            copy(text)
-            return .copied
-        }
-    }
-}
-
 /// The floating indicator, sound cues and notification banners.
 final class IndicatorFeedback: DictationFeedback {
     private let indicator: IndicatorController

@@ -82,12 +82,20 @@ final class DictationSessionTests: XCTestCase {
         func finish(text: String) { finish(.success(text)) }
     }
 
+    /// Delivers the raw transcript as is (cleanup is `TextDelivery`'s,
+    /// tested there), plus a space if asked, with a scripted outcome.
     private final class FakeDelivery: DictationDelivery {
         var outcome: DeliveryOutcome = .pasted
+        /// Every transcript handed over, delivered or dropped.
+        private(set) var received: [String] = []
+        /// The texts that reached the user.
         private(set) var delivered: [String] = []
-        func deliver(_ text: String) -> DeliveryOutcome {
+        func deliver(_ transcript: String, trailingSpace: Bool) -> DeliveryReport {
+            received.append(transcript)
+            guard outcome != .droppedEmpty else { return DeliveryReport(outcome: .droppedEmpty, text: "") }
+            let text = trailingSpace ? transcript + " " : transcript
             delivered.append(text)
-            return outcome
+            return DeliveryReport(outcome: outcome, text: text)
         }
     }
 
@@ -205,7 +213,7 @@ final class DictationSessionTests: XCTestCase {
         XCTAssertEqual(engine.jobs, [[0.5, 0.25]])
         XCTAssertEqual(session.phase, .transcribing)
 
-        engine.finish(text: " Hello world. ")
+        engine.finish(text: "Hello world.")
         XCTAssertEqual(delivery.delivered, ["Hello world."])
         XCTAssertEqual(history.entries, [.init(text: "Hello world.", outcome: .pasted)])
         XCTAssertEqual(feedback.events.last, .dismiss)
@@ -223,9 +231,9 @@ final class DictationSessionTests: XCTestCase {
         final class OrderingDelivery: DictationDelivery {
             var feedback: FakeFeedback!
             var eventsAtDelivery: [FakeFeedback.Event] = []
-            func deliver(_ text: String) -> DeliveryOutcome {
+            func deliver(_ transcript: String, trailingSpace: Bool) -> DeliveryReport {
                 eventsAtDelivery = feedback.events
-                return .pasted
+                return DeliveryReport(outcome: .pasted, text: transcript)
             }
         }
         let ordering = OrderingDelivery()
@@ -267,7 +275,7 @@ final class DictationSessionTests: XCTestCase {
 
     func testCanDictateAgainAfterEachEnding() {
         dictate("one")
-        dictate("[BLANK_AUDIO]")
+        delivery.outcome = .droppedEmpty; dictate("[BLANK_AUDIO]"); delivery.outcome = .pasted
         session.handle(.holdDown); clock.advance(by: 2); session.handle(.holdUp)
         capture.finishEnd(); engine.finish(.failure(FakeError("x")))
         session.handle(.holdDown); session.handle(.cancel)                              // cancelled
@@ -386,10 +394,10 @@ final class DictationSessionTests: XCTestCase {
         final class ReentrantDelivery: DictationDelivery {
             weak var session: DictationSession?
             var phaseSeen: DictationSession.Phase?
-            func deliver(_ text: String) -> DeliveryOutcome {
+            func deliver(_ transcript: String, trailingSpace: Bool) -> DeliveryReport {
                 phaseSeen = session?.phase
                 session?.handle(.toggle)
-                return .pasted
+                return DeliveryReport(outcome: .pasted, text: transcript)
             }
         }
         let reentrant = ReentrantDelivery()
@@ -553,22 +561,38 @@ final class DictationSessionTests: XCTestCase {
                        [.level(0.5)])
     }
 
-    // MARK: - Text cleanup
+    // MARK: - Delivery outcomes
 
-    func testEmptyTextNeverReachesDelivery() {
-        dictate("  \n ")
-        XCTAssertTrue(delivery.delivered.isEmpty)
+    func testRawTranscriptHandedToDelivery() {
+        dictate(" [Music] Hello world. ")
+        XCTAssertEqual(delivery.received, [" [Music] Hello world. "], "Cleanup is delivery's")
+    }
+
+    func testCopiedOutcomeNotifiesExactlyOnce() {
+        delivery.outcome = .copied
+        dictate("one")
+        dictate("two")
+        XCTAssertEqual(feedback.notifications, ["Dictation copied", "Dictation copied"])
+    }
+
+    func testDroppedTextGetsNoNoticeAndNoHistory() {
+        delivery.outcome = .droppedEmpty
+        for raw in ["  \n ", "[BLANK_AUDIO]", "[Music]\n(laughs)"] {
+            dictate(raw)
+        }
+        XCTAssertEqual(delivery.received.count, 3)
         XCTAssertTrue(history.entries.isEmpty)
+        XCTAssertTrue(feedback.notifications.isEmpty)
         XCTAssertEqual(feedback.events.last, .dismiss)
         XCTAssertEqual(session.phase, .idle)
     }
 
-    func testTagOnlyTextNeverReachesDelivery() {
-        for raw in ["[BLANK_AUDIO]", " (music) ", "[Music] [Applause]", "[Music]\n(laughs)"] {
-            dictate(raw)
-        }
-        XCTAssertTrue(delivery.delivered.isEmpty)
-        XCTAssertTrue(history.entries.isEmpty)
+    func testCanDictateAfterDroppedText() {
+        delivery.outcome = .droppedEmpty
+        dictate("[BLANK_AUDIO]")
+        delivery.outcome = .pasted
+        dictate("next")
+        XCTAssertEqual(history.entries, [.init(text: "next", outcome: .pasted)])
     }
 
     func testTrailingSpaceReadWhenRecordingStops() {
@@ -582,25 +606,5 @@ final class DictationSessionTests: XCTestCase {
         dictate("two")
         XCTAssertEqual(delivery.delivered, ["one", "two "])
         XCTAssertEqual(history.entries.map(\.text), ["one", "two "])
-    }
-
-    func testCleanTrimsAndAddsTrailingSpace() {
-        XCTAssertEqual(TranscriptCleanup.clean("  Hi there. \n", trailingSpace: false), "Hi there.")
-        XCTAssertEqual(TranscriptCleanup.clean(" Hi there.", trailingSpace: true), "Hi there. ")
-        XCTAssertEqual(TranscriptCleanup.clean("   ", trailingSpace: true), "")
-    }
-
-    func testCleanDropsTagOnlyText() {
-        for raw in ["[BLANK_AUDIO]", "(music)", "[Music] [Applause]", " [Music]  (applause)\n[BLANK_AUDIO] ",
-                    "()", "[ Silence ]"] {
-            XCTAssertEqual(TranscriptCleanup.clean(raw, trailingSpace: true), "", raw)
-        }
-    }
-
-    func testCleanStripsTagsFromSpeech() {
-        XCTAssertEqual(TranscriptCleanup.clean("[Music] Hello", trailingSpace: false), "Hello")
-        XCTAssertEqual(TranscriptCleanup.clean("[Music] hello [Music]", trailingSpace: true), "hello ")
-        XCTAssertEqual(TranscriptCleanup.clean("Call me (maybe)", trailingSpace: false), "Call me (maybe)")
-        XCTAssertEqual(TranscriptCleanup.clean("[unclosed", trailingSpace: false), "[unclosed")
     }
 }

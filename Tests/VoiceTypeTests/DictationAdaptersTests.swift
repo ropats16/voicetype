@@ -4,39 +4,6 @@ import XCTest
 /// The live adapters behind `DictationSession`'s ports, where they hold logic.
 final class DictationAdaptersTests: XCTestCase {
 
-    // MARK: - Delivery: focus verdict → paste or copy
-
-    private func deliver(_ text: String, focus: CaretLocator.FocusVerdict)
-        -> (outcome: DeliveryOutcome, pasted: [String], copied: [String]) {
-        var pasted: [String] = [], copied: [String] = []
-        let delivery = PasteDelivery(focusVerdict: { focus },
-                                     paste: { pasted.append($0) },
-                                     copy: { copied.append($0) })
-        let outcome = delivery.deliver(text)
-        return (outcome, pasted, copied)
-    }
-
-    func testEditableFieldIsPasted() {
-        let r = deliver("hi", focus: .editable)
-        XCTAssertEqual(r.outcome, .pasted)
-        XCTAssertEqual(r.pasted, ["hi"])
-        XCTAssertTrue(r.copied.isEmpty)
-    }
-
-    func testUnknownFocusIsPastedAnyway() {
-        let r = deliver("hi", focus: .unknown)
-        XCTAssertEqual(r.outcome, .pasted)
-        XCTAssertEqual(r.pasted, ["hi"])
-        XCTAssertTrue(r.copied.isEmpty)
-    }
-
-    func testNonEditableFocusIsCopied() {
-        let r = deliver("hi", focus: .notEditable)
-        XCTAssertEqual(r.outcome, .copied)
-        XCTAssertTrue(r.pasted.isEmpty)
-        XCTAssertEqual(r.copied, ["hi"])
-    }
-
     // MARK: - Engine: text back on main
 
     private final class EchoAdapter: TranscriptionAdapter {

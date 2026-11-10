@@ -20,7 +20,7 @@ final class ClipboardPaster {
     /// How long after ⌘V the target app may still be reading the clipboard.
     enum Timing {
         /// Native apps read the pasteboard while handling the ⌘V key event,
-        /// well inside this. 0.2 s is the value `TextInserter` shipped with.
+        /// well inside this. 0.2 s is the value the old `TextInserter` shipped with.
         static let restoreDelay: TimeInterval = 0.2
         /// Electron/Chromium apps (VS Code, Slack, Claude…) handle ⌘V on their
         /// renderer process and read the pasteboard asynchronously; under load

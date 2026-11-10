@@ -19,8 +19,9 @@ import Foundation
 ///   starting; a stop shorter than `minSeconds` is an accidental tap and is
 ///   dropped (stop cue, no transcription).
 /// - Toggle, hold and cancel do nothing while transcribing or delivering.
-/// - Only non-empty, non-tag-only text is delivered, and each delivery is
-///   reported once to the history.
+/// - Delivery cleans the transcript; text it drops (empty, tag-only) gets no
+///   notice and no history. Each delivered text is reported once to the
+///   history; a copy (nothing editable focused) also gets one notice.
 ///
 /// Main-thread only: call `handle` on main; ports call back on main.
 final class DictationSession {
@@ -140,7 +141,7 @@ final class DictationSession {
             state = .idle
             switch result {
             case .success(let raw):
-                deliver(TranscriptCleanup.clean(raw, trailingSpace: trailingSpace))
+                deliver(raw, trailingSpace: trailingSpace)
             case .failure(let error):
                 fail("Transcription failed", error)
             }
@@ -200,18 +201,19 @@ final class DictationSession {
         state = .idle
     }
 
-    private func deliver(_ text: String) {
-        guard !text.isEmpty else {
-            Log.info("Transcription was empty.")
-            return
-        }
+    private func deliver(_ transcript: String, trailingSpace: Bool) {
         state = .delivering
-        let outcome = delivery.deliver(text)
-        if outcome == .copied {
+        let report = delivery.deliver(transcript, trailingSpace: trailingSpace)
+        switch report.outcome {
+        case .droppedEmpty:
+            Log.info("Transcription was empty.")
+        case .copied:
             Log.info("Focused element isn't editable; copied instead of pasting.")
             feedback.notify(title: "Dictation copied", body: "No text field is focused — paste with ⌘V.")
+            history.delivered(report.text, outcome: .copied)
+        case .pasted:
+            history.delivered(report.text, outcome: .pasted)
         }
-        history.delivered(text, outcome: outcome)
         state = .idle
     }
 
