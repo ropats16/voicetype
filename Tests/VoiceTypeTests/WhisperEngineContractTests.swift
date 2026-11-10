@@ -42,12 +42,27 @@ final class WhisperEngineContractTests: XCTestCase {
     /// #7: silence decodes to no tags (`[BLANK_AUDIO]`, `(music)`, …), with
     /// the app's default tuning.
     func testSilenceNeverYieldsNonSpeechTags() async throws {
-        try XCTSkipUnless(FileManager.default.fileExists(atPath: modelPath), "tiny.en model not downloaded")
+        try await assertSilenceYieldsNoTags(modelPath: modelPath)
+    }
+
+    /// medium.en (the default on most Macs) emits `[BLANK_AUDIO]` on silence,
+    /// and hallucinates "you" if `suppress_nst` is on: expect empty text.
+    func testSilenceYieldsNothingOnMediumEn() async throws {
+        let medium = Paths.modelsDir.appendingPathComponent("ggml-medium.en.bin").path
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: medium), "medium.en model not downloaded")
+        let text = try await assertSilenceYieldsNoTags(modelPath: medium)
+        XCTAssertEqual(text.trimmingCharacters(in: .whitespaces), "")
+    }
+
+    @discardableResult
+    private func assertSilenceYieldsNoTags(modelPath: String) async throws -> String {
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: modelPath), "model not downloaded")
         let engine = TranscriptionEngine.whisper(model: ModelSpec(path: modelPath, sha256: nil, language: "en"), threads: 0)
         engine.load()
         let transcript = try await engine.transcribe([Float](repeating: 0, count: 16_000 * 3))
-        XCTAssertNil(transcript.text.rangeOfCharacter(from: CharacterSet(charactersIn: "[]()♪")),
+        XCTAssertNil(transcript.text.rangeOfCharacter(from: CharacterSet(charactersIn: "[]()♪*")),
                      "Got tags: \(transcript.text)")
+        return transcript.text
     }
 
     /// Every non-default knob together still transcribes the JFK sample.

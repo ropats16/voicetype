@@ -236,11 +236,16 @@ Primary model **medium.en** (the app default; 1.43 GiB), with **tiny.en** as the
 lighter-Mac reference. Fixtures: the standard manifest (8 short clips, 127
 words; 623 s long clip, 1754 words), `--runs 3`.
 
-- Sweep binary: `c3663f7` (chunk 1: knobs + flags). "Before" = bc37815's
+- Sweep binary: `85891a8` (chunk 1: knobs + flags). "Before" = bc37815's
   decoding, reproduced by flags: `--suppress-nst off --audio-ctx off
   --temp-fallback on --vad off --threads 0` (auto = min(16, 8) = 8).
-- "After" binary: `94b6675` (these defaults), no tuning flags, `--threads 0`
+- "After" binary: `e2f7abb` (these defaults), no tuning flags, `--threads 0`
   (auto = min(12 P-cores, 8) = 8).
+- Shas are the on-`main` commits. The runs used the same code before a rebase
+  onto the DictationSession work (pre-rebase `c3663f7` / `94b6675`); nothing
+  under `Transcription/` or `Bench/` differs. The later inline-caption filter
+  tightening (review fix) doesn't touch these fixtures: LibriSpeech output has
+  no tags.
 - Method: one knob at a time vs the baseline. Each config ran twice, in
   opposite orders (round 1 A→Z, round 2 Z→A), ≥ 45 s idle between runs and
   only once the thermal state was back to `nominal` and no other build/test was
@@ -253,7 +258,7 @@ words; 623 s long clip, 1754 words), `--runs 3`.
 | model | build | load | short p50 | short p90 | long RTF | peak mem | short WER | long WER |
 |---|---|---|---|---|---|---|---|---|
 | medium.en | before (bc37815 decoding) | 0.67 s | 296 ms | 325 ms | 0.0311 (32×) | 2,094 MiB | 3.1% (4/127) | 3.19% (56/1754) |
-| medium.en | **after** (94b6675) | 0.67 s | 290 ms | 323 ms | 0.0311 (32×) | 2,096 MiB | 3.1% (4/127) | 3.19% (56/1754) |
+| medium.en | **after** (e2f7abb) | 0.67 s | 290 ms | 323 ms | 0.0311 (32×) | 2,096 MiB | 3.1% (4/127) | 3.19% (56/1754) |
 | tiny.en | before | 0.11 s | 36 ms | 43 ms | 0.0051 | 499 MiB | 3.1% (4/127) | 6.21% (109/1754) |
 | tiny.en | **after** | 0.13 s | 36 ms | 43 ms | 0.0049 | 498 MiB | 3.1% (4/127) | 6.21% (109/1754) |
 
@@ -356,7 +361,7 @@ VAD="$(bash scripts/download_vad_model.sh)"
 SHA="$(git describe --always --dirty)"
 bench() { .build/release/VoiceType --bench --git-sha "$SHA" --runs 3 --threads "${T:-0}" "$@"; }
 
-# before (on c3663f7): bc37815's decoding
+# before (on 85891a8): bc37815's decoding
 bench --model "$M/ggml-medium.en.bin" --suppress-nst off --audio-ctx off --temp-fallback on --vad off --json "$W/before.json"
 # one knob at a time (each flag once; the first occurrence wins)
 bench --model "$M/ggml-medium.en.bin" --suppress-nst on  --audio-ctx off  --temp-fallback on  --vad off --json "$W/nst.json"
@@ -365,7 +370,7 @@ bench --model "$M/ggml-medium.en.bin" --suppress-nst off --audio-ctx off  --temp
 bench --model "$M/ggml-medium.en.bin" --suppress-nst off --audio-ctx off  --temp-fallback on  --vad "$VAD" --json "$W/vad.json"
 # threads: T=1 / 2 / 4 / 6 / 12 with the before flags, e.g.
 T=4 bench --model "$M/ggml-medium.en.bin" --suppress-nst off --audio-ctx off --temp-fallback on --vad off --json "$W/thr4.json"
-# after (on 94b6675): the app's defaults
+# after (on e2f7abb): the app's defaults
 bench --model "$M/ggml-medium.en.bin" --json "$W/after.json"
 # tiny.en: the same with ggml-tiny.en.bin; silence/noise: --manifest <scratch manifest> --only short
 ```

@@ -597,9 +597,9 @@ final class DictationSessionTests: XCTestCase {
         }
     }
 
-    func testCleanKeepsSpeechThatHasTags() {
-        XCTAssertEqual(TranscriptCleanup.clean("[Music] Hello", trailingSpace: false), "[Music] Hello")
-        XCTAssertEqual(TranscriptCleanup.clean("[Music] hello [Music]", trailingSpace: false), "[Music] hello [Music]")
+    func testCleanStripsTagsFromSpeech() {
+        XCTAssertEqual(TranscriptCleanup.clean("[Music] Hello", trailingSpace: false), "Hello")
+        XCTAssertEqual(TranscriptCleanup.clean("[Music] hello [Music]", trailingSpace: true), "hello ")
         XCTAssertEqual(TranscriptCleanup.clean("Call me (maybe)", trailingSpace: false), "Call me (maybe)")
         XCTAssertEqual(TranscriptCleanup.clean("[unclosed", trailingSpace: false), "[unclosed")
     }

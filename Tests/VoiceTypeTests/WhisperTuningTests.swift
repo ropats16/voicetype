@@ -143,6 +143,18 @@ final class WhisperTuningTests: XCTestCase {
         XCTAssertEqual(NonSpeechFilter.clean(" ♪ la la la ♪"), " la la la")
         XCTAssertEqual(NonSpeechFilter.clean(" Well *sighs* okay."), " Well okay.")
         XCTAssertEqual(NonSpeechFilter.clean(" *Laughs*"), "")
+        XCTAssertEqual(NonSpeechFilter.clean(" Wait (gasps) what?"), " Wait what?")
+        XCTAssertEqual(NonSpeechFilter.clean(" Hi (indistinct chatter) there"), " Hi there")
+        XCTAssertEqual(NonSpeechFilter.clean(" Bonjour (speaking foreign language) yes"), " Bonjour yes")
+        XCTAssertEqual(NonSpeechFilter.clean(" Okay (upbeat music) go"), " Okay go")
+    }
+
+    func testSpokenAsidesNamingASoundWordAreKept() {
+        for text in [" It's big (the music industry) now.", " We use it (static typing) a lot.",
+                     " Compute 2*x and music*3.", " See (noise reduction tools) for more.",
+                     " I *whisper* things.", " A (very long caption about loud music) aside."] {
+            XCTAssertEqual(NonSpeechFilter.clean(text), text)
+        }
     }
 
     func testOrdinaryTextAndSpokenParenthesesAreLeftAlone() {

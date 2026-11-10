@@ -9,9 +9,10 @@ import Foundation
 ///   content) is dropped.
 /// - Inside speech, `[...]` and music symbols are always removed (whisper
 ///   never writes square brackets for spoken words); `(...)` and `*...*` only
-///   when they name a sound (music, laughter, applause, …), so a spoken aside
-///   in parentheses stays; `*...*` only hugging its words (`*sighs*`, not
-///   `2 * noise * 3`).
+///   when they are a sound caption: at most three words ending in a sound word
+///   (`(laughs)`, `(upbeat music)`, `(speaking foreign language)`), so spoken
+///   asides like `(the music industry)` or `(static typing)` stay; `*...*`
+///   only as a standalone word (`*sighs*`, not `2*x and music*3`).
 enum NonSpeechFilter {
     /// Segments with their tags removed; tag-only segments dropped. Times are kept.
     static func filter(_ segments: [Transcript.Segment]) -> [Transcript.Segment] {
@@ -47,18 +48,21 @@ enum NonSpeechFilter {
         pattern: #"^\s*(?:(?:\[[^\[\]]*\]|\([^()]*\)|[\#(musicSymbols)]+)\s*)+$"#)
 
     /// A tag inside speech: any `[...]`, music symbols, or a `(...)` or
-    /// `*...*` naming a sound.
+    /// standalone `*...*` sound caption.
     private static let inlineTag = try! NSRegularExpression(
-        pattern: #"\[[^\[\]]*\]|[\#(musicSymbols)]+|\([^()]*\b(?:"#
-            + soundWords.joined(separator: "|")
-            + #")\b[^()]*\)|\*(?!\s)[^*]*\b(?:"#
-            + soundWords.joined(separator: "|")
-            + #")\b[^*]*(?<!\s)\*"#,
+        pattern: #"\[[^\[\]]*\]|[\#(musicSymbols)]+|\(\s*"#  + caption + #"\s*\)|(?<![\w*])\*"#
+            + caption + #"\*(?![\w*])"#,
         options: [.caseInsensitive])
 
-    /// Words whisper's sound captions use, as regex fragments.
+    /// Up to two leading words, then a sound word (`upbeat music`, `laughs`).
+    private static let caption = #"(?:[\w'-]+\s+){0,2}(?:"# + soundWords.joined(separator: "|") + #")"#
+
+    /// Words whisper's sound captions end in, as regex fragments.
     private static let soundWords = [
-        "music", "laugh\\w*", "applause", "silence", "inaudible", "noise", "cough\\w*", "sigh\\w*",
-        "static", "beep\\w*", "breath\\w*", "clap\\w*", "chuckl\\w*", "crosstalk", "blank_audio", "whoosh\\w*",
+        "music", "laugh\\w*", "applause", "silence", "inaudible", "unintelligible", "indistinct", "noise",
+        "cough\\w*", "sigh\\w*", "static", "beep\\w*", "breath\\w*", "clap\\w*", "chuckl\\w*", "crosstalk",
+        "chatter\\w*", "blank_audio", "whoosh\\w*", "gasp\\w*", "whisper(?:s|ing)", "sniff\\w*", "groan\\w*",
+        "sobs?", "sobbing", "cr(?:ies|ying)", "scream\\w*", "hum(?:s|ming)", "sneez\\w*", "yawn\\w*", "footsteps",
+        "foreign language",
     ]
 }
