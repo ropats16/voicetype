@@ -47,7 +47,7 @@ Key facts (current whisper.cpp has **no Package.swift**, so we vendor sources):
   `whisper_init_from_file_with_params` → `whisper_full_default_params(WHISPER_SAMPLING_GREEDY)`
   (`language="en"`, `no_timestamps=true`, all `print_*=false`) → `whisper_full` →
   `whisper_full_n_segments`/`_get_segment_text`. Context is **not** thread-safe — only the
-  single serial transcribe queue in `DictationController` calls it.
+  single serial queue in `TranscriptionEngine` calls it.
 
 ## Model download
 - Host is **`huggingface.co/ggerganov/whisper.cpp`** (GitHub moved to ggml-org; the HF

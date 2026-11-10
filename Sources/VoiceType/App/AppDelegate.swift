@@ -9,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem!
     private var hotkeys: HotkeyManager?
-    private var dictation: DictationController?
+    private var dictation: DictationSession?
     /// The model comes from the config (explicit pick, else auto-picked for
     /// this Mac); Settings changes are applied live by `applyModelSettings()`.
     private lazy var engine: TranscriptionEngine = .whisper(
@@ -262,9 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         guard permissions.isAccessibilityTrusted() else { return }
 
-        if dictation == nil {
-            dictation = DictationController(engine: engine, capture: capture, configStore: configStore)
-        }
+        if dictation == nil { dictation = makeDictationSession() }
         if hotkeys == nil {
             reloadHotkeys()
             if hotkeys == nil {
@@ -280,20 +278,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         readinessTimer = nil
     }
 
+    /// The dictation flow over the live mic, engine, paste and indicator.
+    /// Settings are read live, so a change applies to the next recording.
+    private func makeDictationSession() -> DictationSession {
+        DictationSession(
+            capture: capture,
+            engine: EngineDictationAdapter(engine),
+            delivery: PasteDelivery(),
+            feedback: IndicatorFeedback(soundCues: SoundCues(isEnabled: { [weak configStore] in
+                configStore?.config.soundCues ?? false
+            })),
+            settings: { [configStore] in
+                DictationSettings(minSeconds: 0.3,
+                                  maxSeconds: configStore.config.maxRecordingSeconds,
+                                  trailingSpace: configStore.config.trailingSpace)
+            }
+        )
+    }
+
     /// Stops any running hotkey tap, builds a fresh `HotkeyManager` from the
-    /// current config, wires the dictation callbacks, and starts it. Sets
-    /// `hotkeys` only if `start()` succeeds (so `evaluateReadiness()` can detect
-    /// failure and retry on the next timer tick).
+    /// current config, forwards its intents to the dictation session, and
+    /// starts it. Sets `hotkeys` only if `start()` succeeds (so
+    /// `evaluateReadiness()` can detect failure and retry on the next tick).
     private func reloadHotkeys() {
         hotkeys?.stop()
         hotkeys = nil
         let manager = HotkeyManager(hold: configStore.config.hold,
                                     toggle: configStore.config.toggle,
                                     cancelKeyCode: configStore.config.cancelKeyCode)
-        manager.onHoldStart = { [weak self] in self?.dictation?.startRecording() }
-        manager.onHoldStop = { [weak self] in self?.dictation?.stopRecordingAndTranscribe() }
-        manager.onTogglePress = { [weak self] in self?.dictation?.toggleRecording() }
-        manager.onCancel = { [weak self] in self?.dictation?.cancelRecording() }
+        manager.onHoldStart = { [weak self] in self?.dictation?.handle(.holdDown) }
+        manager.onHoldStop = { [weak self] in self?.dictation?.handle(.holdUp) }
+        manager.onTogglePress = { [weak self] in self?.dictation?.handle(.toggle) }
+        manager.onCancel = { [weak self] in self?.dictation?.handle(.cancel) }
         if manager.start() {
             hotkeys = manager
             // Log only on the first successful wire-up, not on every hotkey rebind.

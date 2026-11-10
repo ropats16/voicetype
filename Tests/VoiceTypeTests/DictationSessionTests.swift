@@ -333,6 +333,17 @@ final class DictationSessionTests: XCTestCase {
         XCTAssertTrue(history.entries.isEmpty)
     }
 
+    func testMicResultAfterCancelIsIgnored() {
+        session.handle(.holdDown)
+        session.handle(.cancel)            // Esc while the mic was still starting
+        capture.started(error: FakeError("no mic"))
+
+        XCTAssertTrue(feedback.notifications.isEmpty)
+        XCTAssertEqual(engine.endPrewarms, 1)
+        XCTAssertEqual(feedback.events, [.showRecording, .cue(.start), .dismiss])
+        XCTAssertEqual(session.phase, .idle)
+    }
+
     func testCancelWhileIdleOrTranscribingDoesNothing() {
         session.handle(.cancel)
         XCTAssertTrue(feedback.events.isEmpty)
