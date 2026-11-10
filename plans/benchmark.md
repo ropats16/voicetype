@@ -36,12 +36,32 @@ Options:
 | `--only short\|long` | both | skip one half (the long clip dominates run time) |
 | `--language <code>` | `config.json`'s `language` | passed to the engine, as the app does |
 | `--threads <n>` | `config.json`'s `threads` (0 = auto) | passed to the engine, as the app does |
+| `--suppress-nst on\|off` | `on` | whisper `suppress_nst`: never decode non-speech tokens (♪, `[…]`, `(…)`) |
+| `--audio-ctx off\|clip` | `off` | whisper `audio_ctx`: `off` = full 1500-frame (30 s) encoder window; `clip` = sized to each clip (`WhisperTuning.audioContext(forSampleCount:)`: frames + 64 padding, rounded up to 64, min 256, full window from ~28.5 s) |
+| `--temp-fallback on\|off` | `on` | whisper `temperature_inc`: `on` = 0.2 (re-decode hotter when a decode looks bad), `off` = 0 (one greedy decode) |
+| `--vad off\|<file>` | `off` | whisper's built-in Silero VAD: transcribe only detected speech. `<file>` = a ggml Silero model (`bash scripts/download_vad_model.sh` / `make vad-model` → `~/Library/Application Support/VoiceType/models/ggml-silero-v6.2.0.bin`) |
 | `--json <path>` | `.bench/results/<time>-<engine>-<model>.json` | report path |
 | `--git-sha <sha>` | none (recorded as `null`) | commit to record; the binary never runs git |
 
 `config.json` is only read (defaults if it's missing), never written.
 
-Progress and engine logs go to stderr; only the table goes to stdout.
+The four whisper flags (#7) default to what the app ships (`WhisperTuning.default`);
+any combination can be swept without rebuilding, e.g.:
+
+```sh
+VAD="$(bash scripts/download_vad_model.sh)"
+.build/release/VoiceType --bench --git-sha "$(git describe --always --dirty)" \
+  --model "$HOME/Library/Application Support/VoiceType/models/ggml-base.en.bin" \
+  --threads 4 --audio-ctx clip --temp-fallback off --vad "$VAD"
+```
+
+The chosen tuning is printed in the table header (`language en · threads auto ·
+suppress-nst on · audio-ctx off · temp-fallback on · vad off`) and recorded in
+the report's `settings.whisper`. Whatever the flags, the adapter always drops
+non-speech tags from the text (`NonSpeechFilter`), so WER never counts them.
+
+Progress goes to stderr; only the table goes to stdout. whisper.cpp/ggml's own
+logs are silenced (`WhisperLogging`; warnings/errors go to `Log.debug` only).
 
 For numbers worth comparing: plug in the Mac, close heavy apps, let it idle a
 minute, and check the header's `thermal` reads `nominal` (it shows `start → end`
@@ -132,7 +152,7 @@ a hand-written manifest.
 (or absolute); `#` comments and blank lines are ignored. The clip id is the file
 name without its extension.
 
-## JSON report (schema version 1)
+## JSON report (schema version 2)
 
 Keys are sorted; durations in seconds, sizes in bytes. Every key is always
 present — a value that's unknown or doesn't apply is `null`, never omitted — so
@@ -140,7 +160,7 @@ the key set is fixed per `schemaVersion`.
 
 ```jsonc
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "createdAt": "2026-11-04T02:21:25Z",
   "machine": { "chip": "Apple M3 Max", "model": "Mac15,9", "memoryBytes": 51539607552,
                "performanceCores": 12, "efficiencyCores": 4,      // null on Intel
@@ -149,7 +169,10 @@ the key set is fixed per `schemaVersion`.
   "engine":  { "id": "whisper", "modelFile": "ggml-tiny.en.bin",
                "modelBytes": 77704715 },       // directories summed; null if no such path
   "build":   { "configuration": "release", "gitSHA": "e344a97-dirty" },  // null without --git-sha
-  "settings": { "shortRuns": 3, "language": "en", "threads": 0 },
+  "settings": { "shortRuns": 3, "language": "en", "threads": 0,
+                "whisper": { "suppressNonSpeech": true, "audioContext": "off",   // "off" | "clip"
+                             "temperatureFallback": true,
+                             "vad": null } },   // null = off, else the Silero model path
   "results": {
     "load":   { "adapterSeconds": 0.08, "warmUpSeconds": 0.04, "totalSeconds": 0.12 },
     "memory": { "baselineBytes": …, "loadedBytes": …, "peakBytes": …,
@@ -174,7 +197,8 @@ the key set is fixed per `schemaVersion`.
 }
 ```
 
-Bump `schemaVersion` (in `BenchReport`) on any breaking change.
+Bump `schemaVersion` (in `BenchReport`) on any breaking change. v2 (#7) added
+`settings.whisper`.
 
 ## Adding an engine
 
@@ -193,7 +217,10 @@ engine without a model file still needs some path (e.g. its asset directory).
 
 ## Code map
 
-- `Bench/BenchCommand.swift` — CLI parsing, fixture decoding, machine info, output.
+- `Bench/BenchCommand.swift` — CLI parsing (`tuning(from:)` for the whisper flags),
+  fixture decoding, machine info, output.
+- `Transcription/WhisperTuning.swift` — the whisper knobs and `audio_ctx` sizing;
+  `WhisperAdapter.fullParams` maps them onto `whisper_full_params`.
 - `Bench/BenchRunner.swift` — `BenchEngine` registry, the run loop, memory sampling.
 - `Bench/BenchReport.swift` — JSON schema + table. `Bench/BenchStats.swift` —
   percentiles, RTF. `Bench/WordErrorRate.swift` — normalization + WER.

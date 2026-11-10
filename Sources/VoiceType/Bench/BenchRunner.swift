@@ -8,6 +8,8 @@ struct BenchEngine {
         let language: String
         /// 0 = the engine's own default.
         let threads: Int
+        /// whisper.cpp knobs (`--suppress-nst`, `--audio-ctx`, …); other engines ignore them.
+        var whisper: WhisperTuning = .default
     }
 
     let id: String
@@ -18,7 +20,8 @@ struct BenchEngine {
     static func all(_ options: Options) -> [BenchEngine] {
         [
             BenchEngine(id: "whisper",
-                        makeAdapter: TranscriptionEngine.whisperAdapter(threads: options.threads)),
+                        makeAdapter: TranscriptionEngine.whisperAdapter(threads: options.threads,
+                                                                         tuning: options.whisper)),
         ]
     }
 

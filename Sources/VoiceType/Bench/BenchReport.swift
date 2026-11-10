@@ -41,9 +41,11 @@ struct BenchReport: Codable, Equatable {
         let language: String
         /// 0 = the engine's own default.
         let threads: Int
+        /// The whisper.cpp knobs the run used (other engines ignore them).
+        var whisper: WhisperTuning = .default
     }
 
-    var schemaVersion = 1
+    var schemaVersion = 2
     /// ISO 8601, UTC.
     let createdAt: String
     let machine: Machine
@@ -70,6 +72,8 @@ struct BenchReport: Codable, Equatable {
             ? machine.thermalStateAtStart : "\(machine.thermalStateAtStart) → \(machine.thermalStateAtEnd)"
         out.append("\(machine.chip) (\(machine.model)\(cores.isEmpty ? "" : ", \(cores)")) · "
                    + "\(gib(machine.memoryBytes)) · macOS \(machine.osVersion) · thermal \(thermal)")
+        out.append("language \(settings.language) · threads \(settings.threads == 0 ? "auto" : String(settings.threads)) · "
+                   + settings.whisper.summary)
         out.append("")
         out.append("Load      adapter \(secs(r.load.adapterSeconds))  warm-up \(secs(r.load.warmUpSeconds))  "
                    + "total \(secs(r.load.totalSeconds))")

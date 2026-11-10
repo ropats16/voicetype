@@ -39,6 +39,42 @@ final class WhisperEngineContractTests: XCTestCase {
         XCTAssertLessThanOrEqual(previousEnd, duration + 0.5, "Timestamps stay within the clip")
     }
 
+    /// #7: silence decodes to no tags (`[BLANK_AUDIO]`, `(music)`, …), with
+    /// the app's default tuning.
+    func testSilenceNeverYieldsNonSpeechTags() async throws {
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: modelPath), "tiny.en model not downloaded")
+        let engine = TranscriptionEngine.whisper(model: ModelSpec(path: modelPath, sha256: nil, language: "en"), threads: 0)
+        engine.load()
+        let transcript = try await engine.transcribe([Float](repeating: 0, count: 16_000 * 3))
+        XCTAssertNil(transcript.text.rangeOfCharacter(from: CharacterSet(charactersIn: "[]()♪")),
+                     "Got tags: \(transcript.text)")
+    }
+
+    /// Every non-default knob together still transcribes the JFK sample.
+    func testTunedDecodingStillTranscribesJFK() async throws {
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: modelPath), "tiny.en model not downloaded")
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: wavPath), "jfk.wav fixture not present")
+        let vadPath = Paths.modelsDir.appendingPathComponent("ggml-silero-v6.2.0.bin").path
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: vadPath),
+                          "Silero VAD model not downloaded (scripts/download_vad_model.sh)")
+        let tuning = WhisperTuning(suppressNonSpeech: true, audioContext: .sizedToClip,
+                                   temperatureFallback: false, vad: .silero(modelPath: vadPath))
+        let engine = TranscriptionEngine.whisper(model: ModelSpec(path: modelPath, sha256: nil, language: "en"),
+                                                 threads: 4, tuning: tuning)
+        engine.load()
+        let transcript = try await engine.transcribe(try loadMono16k(wavPath))
+        XCTAssertEqual(engine.status, .ready)
+        XCTAssertTrue(transcript.text.lowercased().contains("country"), "Got: \(transcript.text)")
+    }
+
+    /// A missing VAD model fails the load, not every job.
+    func testMissingVADModelFailsTheLoad() async throws {
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: modelPath), "tiny.en model not downloaded")
+        let make = TranscriptionEngine.whisperAdapter(
+            threads: 0, tuning: WhisperTuning(vad: .silero(modelPath: "/nonexistent/ggml-silero.bin")))
+        XCTAssertThrowsError(try make(ModelSpec(path: modelPath, sha256: nil, language: "en")))
+    }
+
     /// The fixture is already 16 kHz mono, so read it straight, without the
     /// capture's resampler.
     private func loadMono16k(_ path: String) throws -> [Float] {

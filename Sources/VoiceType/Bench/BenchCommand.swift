@@ -11,7 +11,8 @@ enum BenchCommand {
         """
         usage: VoiceType --bench --model <file> [--engine <id>] [--manifest <manifest.tsv>]
                          [--runs <n>] [--only short|long] [--language <code>] [--threads <n>]
-                         [--json <out.json>] [--git-sha <sha>]
+                         [--suppress-nst on|off] [--audio-ctx off|clip] [--temp-fallback on|off]
+                         [--vad off|<silero model>] [--json <out.json>] [--git-sha <sha>]
 
           --model     model file (or directory) for the engine (e.g. ggml-tiny.en.bin)
           --engine    engine to bench: \(engineIDs) (default: whisper)
@@ -20,6 +21,12 @@ enum BenchCommand {
           --only      bench just the short or just the long clips
           --language  transcription language (default: config.json's, now "\(config.language)")
           --threads   engine threads, 0 = auto (default: config.json's, now \(config.threads))
+          --suppress-nst   whisper: suppress non-speech tokens (default: on)
+          --audio-ctx      whisper: encoder context, off = full 30 s window, clip = sized to
+                           each clip (default: off)
+          --temp-fallback  whisper: re-decode at higher temperature on a bad decode (default: on)
+          --vad            whisper: Silero VAD model file to skip silence, or off (default: off;
+                           fetch with scripts/download_vad_model.sh)
           --json      where to write the report
                       (default: .bench/results/<time>-<engine>-<model>.json)
           --git-sha   commit to record, e.g. --git-sha "$(git describe --always --dirty)"
@@ -38,7 +45,10 @@ enum BenchCommand {
 
         let threads = value("--threads").map { Int($0) ?? -1 } ?? config.threads
         guard threads >= 0 else { return fail("--threads must be a non-negative integer", code: 2) }
-        let options = BenchEngine.Options(language: value("--language") ?? config.language, threads: threads)
+        let tuning: WhisperTuning
+        do { tuning = try Self.tuning(from: arguments) } catch { return fail(error.localizedDescription, code: 2) }
+        let options = BenchEngine.Options(language: value("--language") ?? config.language, threads: threads,
+                                          whisper: tuning)
         let engineID = value("--engine") ?? "whisper"
         guard let engine = BenchEngine.named(engineID, options) else {
             return fail("unknown engine '\(engineID)'\n\n\(usage(config))", code: 2)
@@ -66,7 +76,8 @@ enum BenchCommand {
 
             let thermalAtStart = MachineInfo.thermalState()
             log("Benching \(engine.id) with \(modelURL.lastPathComponent) (\(clips.of(.short).count) short × \(runs), "
-                + "\(clips.of(.long).count) long; language \(options.language), threads \(options.threads))")
+                + "\(clips.of(.long).count) long; language \(options.language), threads \(options.threads); "
+                + "\(tuning.summary))")
             let runner = BenchRunner(engine: engine, model: .file(modelURL.path, language: options.language),
                                      shortRuns: runs)
             let results = try CommandLineSupport.blocking { try await runner.run(clips) }
@@ -76,7 +87,8 @@ enum BenchCommand {
                 machine: MachineInfo.current(thermalAtStart: thermalAtStart),
                 engine: .init(id: engine.id, modelFile: modelURL.lastPathComponent, modelBytes: diskSize(of: modelURL)),
                 build: .init(configuration: buildConfiguration, gitSHA: value("--git-sha")),
-                settings: .init(shortRuns: runs, language: options.language, threads: options.threads),
+                settings: .init(shortRuns: runs, language: options.language, threads: options.threads,
+                                whisper: tuning),
                 results: results)
 
             let jsonURL = URL(fileURLWithPath: value("--json") ?? defaultJSONPath(engine: engine.id, model: modelURL))
@@ -89,6 +101,45 @@ enum BenchCommand {
         } catch {
             return fail("bench failed: \(error.localizedDescription)", code: 1)
         }
+    }
+
+    struct UsageError: LocalizedError {
+        let errorDescription: String?
+        init(_ message: String) { errorDescription = message }
+    }
+
+    /// The whisper tuning from `--suppress-nst`, `--audio-ctx`,
+    /// `--temp-fallback` and `--vad`; `WhisperTuning.default` (the app's) for
+    /// any flag not given. `--vad <path>` must name an existing file.
+    static func tuning(from arguments: [String],
+                       fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) throws -> WhisperTuning {
+        func value(_ flag: String) -> String? { CommandLineSupport.value(flag, in: arguments) }
+        func onOff(_ flag: String, default fallback: Bool) throws -> Bool {
+            switch value(flag) {
+            case nil: return fallback
+            case "on": return true
+            case "off": return false
+            case let other?: throw UsageError("\(flag) must be on or off (got '\(other)')")
+            }
+        }
+        var t = WhisperTuning.default
+        t.suppressNonSpeech = try onOff("--suppress-nst", default: t.suppressNonSpeech)
+        t.temperatureFallback = try onOff("--temp-fallback", default: t.temperatureFallback)
+        if let raw = value("--audio-ctx") {
+            guard let policy = WhisperTuning.AudioContext(rawValue: raw) else {
+                throw UsageError("--audio-ctx must be off or clip (got '\(raw)')")
+            }
+            t.audioContext = policy
+        }
+        switch value("--vad") {
+        case nil, "off": break
+        case let path?:
+            guard fileExists(path) else {
+                throw UsageError("--vad: no Silero model at \(path) — run scripts/download_vad_model.sh")
+            }
+            t.vad = .silero(modelPath: path)
+        }
+        return t
     }
 
     /// The user's config, read-only (unlike `ConfigStore`, never writes

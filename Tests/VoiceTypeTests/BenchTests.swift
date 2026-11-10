@@ -265,6 +265,47 @@ final class BenchTests: XCTestCase {
         XCTAssertEqual(Set(ids).count, ids.count)
     }
 
+    // MARK: - Tuning flags
+
+    private func tuning(_ args: [String], exists: Bool = true) throws -> WhisperTuning {
+        try BenchCommand.tuning(from: ["VoiceType", "--bench", "--model", "m.bin"] + args, fileExists: { _ in exists })
+    }
+
+    func testNoTuningFlagsMeansTheAppDefaults() throws {
+        XCTAssertEqual(try tuning([]), .default)
+    }
+
+    func testEveryTuningFlagParses() throws {
+        let t = try tuning(["--suppress-nst", "off", "--audio-ctx", "clip", "--temp-fallback", "off",
+                            "--vad", "/m/ggml-silero-v6.2.0.bin"])
+        XCTAssertFalse(t.suppressNonSpeech)
+        XCTAssertEqual(t.audioContext, .sizedToClip)
+        XCTAssertFalse(t.temperatureFallback)
+        XCTAssertEqual(t.vad, .silero(modelPath: "/m/ggml-silero-v6.2.0.bin"))
+
+        let back = try tuning(["--suppress-nst", "on", "--audio-ctx", "off", "--temp-fallback", "on", "--vad", "off"])
+        XCTAssertEqual(back, .default)
+    }
+
+    func testBadTuningValuesAreRejectedNamingTheFlag() {
+        for (args, flag) in [(["--audio-ctx", "sized"], "--audio-ctx"), (["--temp-fallback", "yes"], "--temp-fallback"),
+                             (["--suppress-nst", "1"], "--suppress-nst")] {
+            XCTAssertThrowsError(try tuning(args)) {
+                XCTAssertTrue($0.localizedDescription.contains(flag), $0.localizedDescription)
+            }
+        }
+        XCTAssertThrowsError(try tuning(["--vad", "/nope/ggml-silero.bin"], exists: false)) {
+            XCTAssertTrue($0.localizedDescription.contains("/nope/ggml-silero.bin"), $0.localizedDescription)
+        }
+    }
+
+    func testEnginesGetTheTuning() {
+        var options = BenchEngine.Options(language: "en", threads: 0)
+        XCTAssertEqual(options.whisper, .default)
+        options.whisper.audioContext = .sizedToClip
+        XCTAssertNotNil(BenchEngine.named("whisper", options))
+    }
+
     // MARK: - Model size
 
     func testModelSizeIsAFilesSizeOrADirectorysTotalOrNil() throws {
@@ -281,6 +322,13 @@ final class BenchTests: XCTestCase {
 
     // MARK: - Output
 
+    private let sampleTuning: WhisperTuning = {
+        var t = WhisperTuning.default
+        t.audioContext = .sizedToClip
+        t.temperatureFallback = false
+        return t
+    }()
+
     private func sampleReport(memory: MemorySnapshot? = MemorySnapshot(footprintBytes: 50_000_000,
                                                                        lifetimePeakBytes: 300_000_000),
                               gitSHA: String? = "abc1234", modelBytes: UInt64? = 1234,
@@ -294,7 +342,7 @@ final class BenchTests: XCTestCase {
                            osVersion: "15.1 (24B83)", thermalStateAtStart: "nominal", thermalStateAtEnd: "fair"),
             engine: .init(id: "fake", modelFile: "ggml-tiny.en.bin", modelBytes: modelBytes),
             build: .init(configuration: "release", gitSHA: gitSHA),
-            settings: .init(shortRuns: 2, language: "en", threads: 0),
+            settings: .init(shortRuns: 2, language: "en", threads: 0, whisper: sampleTuning),
             results: results)
     }
 
@@ -326,8 +374,14 @@ final class BenchTests: XCTestCase {
         let data = try report.jsonData()
         let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
-        XCTAssertEqual(object["schemaVersion"] as? Int, 1)
+        XCTAssertEqual(object["schemaVersion"] as? Int, 2)
         XCTAssertEqual(Set(object.keys), ["schemaVersion", "createdAt", "machine", "engine", "build", "settings", "results"])
+        let settings = try XCTUnwrap(object["settings"] as? [String: Any])
+        XCTAssertEqual(Set(settings.keys), ["shortRuns", "language", "threads", "whisper"])
+        let whisper = try XCTUnwrap(settings["whisper"] as? [String: Any])
+        XCTAssertEqual(Set(whisper.keys), ["suppressNonSpeech", "audioContext", "temperatureFallback", "vad"])
+        XCTAssertEqual(whisper["audioContext"] as? String, "clip")
+        XCTAssertEqual(whisper["temperatureFallback"] as? Bool, false)
         let results = try XCTUnwrap(object["results"] as? [String: Any])
         XCTAssertEqual(Set(results.keys), ["load", "memory", "short", "long"])
 
@@ -338,7 +392,8 @@ final class BenchTests: XCTestCase {
     func testTableShowsEveryClipAndTheHeadlineNumbers() async throws {
         let table = try await sampleReport().table()
         for needle in ["fake", "ggml-tiny.en.bin", "Apple M2 Pro", "nominal → fair", "a", "b", "book",
-                       "p50", "p90", "RTF", "WER", "16.7%", "0.100", "2.00s", "0.10s", "200 ms", "286 MiB"] {
+                       "p50", "p90", "RTF", "WER", "16.7%", "0.100", "2.00s", "0.10s", "200 ms", "286 MiB",
+                       "language en · threads auto · suppress-nst on · audio-ctx clip · temp-fallback off · vad off"] {
             XCTAssertTrue(table.contains(needle), "table is missing \(needle):\n\(table)")
         }
     }

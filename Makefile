@@ -8,13 +8,14 @@
 #   make install   build, package, and copy to /Applications
 #   make model     download the model the app auto-picks for this Mac
 #                  (or a specific one: make model MODEL=small.en-q5_1)
+#   make vad-model download the Silero VAD model (bench --vad, #7)
 #   make clean     remove build artifacts
 
 APP   := VoiceType
 # Empty = the model the app auto-picks for this Mac (scripts/model_catalog.sh).
 MODEL ?=
 
-.PHONY: setup embed model build run package install clean
+.PHONY: setup embed model vad-model build run package install clean
 
 # `make setup` auto-detects the model from this Mac's arch + RAM. Pass MODEL= to
 # override, e.g. `make setup MODEL=small.en-q5_1` — only a command-line MODEL is
@@ -33,6 +34,9 @@ embed:
 
 model:
 	bash scripts/download_model.sh $(MODEL)
+
+vad-model:
+	bash scripts/download_vad_model.sh
 
 build: embed
 	swift build -c release
