@@ -37,21 +37,30 @@ protocol DictationEngine: AnyObject {
     func transcribe(_ samples: [Float], completion: @escaping (Result<String, Error>) -> Void)
 }
 
-/// How a transcript reached the user.
-enum DeliveryOutcome: Equatable {
+/// How delivered text reached the user.
+enum DeliveryMethod: Equatable {
     /// Pasted into the focused field.
     case pasted
     /// No editable field was focused: left on the clipboard for the user.
     case copied
-    /// Nothing left after cleanup (silence, tag-only): nothing delivered.
-    case droppedEmpty
 }
 
-/// What one delivery did, and with which text.
-struct DeliveryReport: Equatable {
-    let outcome: DeliveryOutcome
-    /// The cleaned text that reached the user; "" when dropped.
+/// Text that reached the user, and how. Only a delivery that happened has
+/// one, so a drop can't reach the history.
+struct DeliveredText: Equatable {
+    /// The cleaned text, as pasted or copied.
     let text: String
+    let method: DeliveryMethod
+}
+
+/// What one delivery did.
+enum DeliveryReport: Equatable {
+    case delivered(DeliveredText)
+    /// Nothing left after cleanup (silence, tag-only): nothing delivered.
+    case droppedEmpty
+
+    static func pasted(_ text: String) -> DeliveryReport { .delivered(DeliveredText(text: text, method: .pasted)) }
+    static func copied(_ text: String) -> DeliveryReport { .delivered(DeliveredText(text: text, method: .copied)) }
 }
 
 /// Cleans a raw transcript and puts it where the user wants it (paste at the
@@ -74,12 +83,12 @@ protocol DictationFeedback: AnyObject {
 /// Where delivered dictations are recorded. One `delivered` per dictation that
 /// reached the user.
 protocol DictationHistory: AnyObject {
-    func delivered(_ text: String, outcome: DeliveryOutcome)
+    func delivered(_ delivered: DeliveredText)
 }
 
 /// Keeps no history.
 final class NoDictationHistory: DictationHistory {
-    func delivered(_ text: String, outcome: DeliveryOutcome) {}
+    func delivered(_ delivered: DeliveredText) {}
 }
 
 /// A scheduled one-shot callback that hasn't fired yet.
@@ -100,8 +109,14 @@ protocol DictationClock: AnyObject {
 final class SystemDictationClock: DictationClock {
     var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
+    /// In the common modes, not just default: while a menu is open (the
+    /// menu-bar menu) main runs in event-tracking mode, and a default-mode
+    /// timer — a clipboard restore, the max-duration stop — would wait for it
+    /// to close.
     func schedule(after seconds: TimeInterval, _ action: @escaping () -> Void) -> DictationTimer {
-        RunLoopTimer(Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { _ in action() })
+        let timer = Timer(timeInterval: seconds, repeats: false) { _ in action() }
+        RunLoop.main.add(timer, forMode: .common)
+        return RunLoopTimer(timer)
     }
 
     private final class RunLoopTimer: DictationTimer {

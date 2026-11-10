@@ -37,34 +37,53 @@ final class ManualClock: DictationClock {
 }
 
 /// An in-memory pasteboard. Every write bumps `changeCount`, like the real one.
+/// A paste write is served lazily: its first reader (`read()`, or our own
+/// `snapshot()`) fires the write's `onFirstRead`, once.
 final class FakePasteboard: Clipboard {
     private(set) var contents: ClipboardSnapshot
     private(set) var changeCount = 0
     private(set) var restores: [ClipboardSnapshot] = []
     private(set) var snapshotsTaken = 0
+    /// Every plain (non-paste) write's text.
+    private(set) var plainWrites: [String] = []
+    /// Every paste write's `onFirstRead`, in order — lets a test fire a stale one.
+    private(set) var readHooks: [() -> Void] = []
+    /// The current paste write's hook, until it's read or the contents change.
+    private var unread: (() -> Void)?
 
     init(_ contents: ClipboardSnapshot = .empty) { self.contents = contents }
 
     func snapshot() -> ClipboardSnapshot {
         snapshotsTaken += 1
+        fireFirstRead()
         return contents
     }
 
     func write(_ text: String) {
-        contents = ClipboardSnapshot(items: [.init([.init(type: Self.plainText, data: Data(text.utf8))])])
-        changeCount += 1
+        plainWrites.append(text)
+        replace(with: Self.plain(text))
+    }
+
+    func writeForPaste(_ text: String, onFirstRead: @escaping () -> Void) {
+        replace(with: Self.plain(text))
+        readHooks.append(onFirstRead)
+        unread = onFirstRead
     }
 
     func restore(_ snapshot: ClipboardSnapshot) {
         restores.append(snapshot)
-        contents = snapshot
-        changeCount += 1
+        replace(with: snapshot)
     }
 
     /// Something other than the paster (the user, another app) copies.
-    func externalCopy(_ text: String) {
-        contents = ClipboardSnapshot(items: [.init([.init(type: Self.plainText, data: Data(text.utf8))])])
-        changeCount += 1
+    func externalCopy(_ text: String) { replace(with: Self.plain(text)) }
+
+    /// An app (the ⌘V target, a clipboard manager) reads the text. Reads
+    /// don't bump `changeCount`.
+    @discardableResult
+    func read() -> String? {
+        fireFirstRead()
+        return text
     }
 
     var text: String? {
@@ -73,11 +92,27 @@ final class FakePasteboard: Clipboard {
     }
 
     static let plainText = "public.utf8-plain-text"
+
+    private func replace(with snapshot: ClipboardSnapshot) {
+        contents = snapshot
+        changeCount += 1
+        unread = nil
+    }
+
+    private func fireFirstRead() {
+        let hook = unread
+        unread = nil
+        hook?()
+    }
+
+    private static func plain(_ text: String) -> ClipboardSnapshot {
+        ClipboardSnapshot(items: [.init([.init(type: plainText, data: Data(text.utf8))])])
+    }
 }
 
 final class FakeKeyPoster: KeyPoster {
     private(set) var pastes = 0
-    /// What the pasteboard held each time ⌘V was posted.
+    /// Runs on each ⌘V — e.g. the target app reading the pasteboard.
     var onPaste: (() -> Void)?
     func postPaste() { pastes += 1; onPaste?() }
 }

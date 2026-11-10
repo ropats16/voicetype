@@ -8,9 +8,10 @@ import Foundation
 ///    asked. Nothing left → `.droppedEmpty`, with no AX or clipboard work.
 /// 2. Focus: the probe's observation goes through `FocusRules` — editable or
 ///    unknown → paste, not editable → copy.
-/// 3. Paste or copy through `ClipboardPaster`, which snapshots and restores
-///    the user's clipboard after the burst's last paste, late for
-///    Chromium/Electron (or timed-out) apps; a copy cancels any pending restore.
+/// 3. Paste or copy through `ClipboardPaster`, which snapshots the user's
+///    clipboard and restores it once the burst's last paste has been read
+///    (with longer floors and caps for Chromium/Electron or timed-out apps);
+///    a copy cancels any pending restore.
 ///
 /// Main-thread only.
 final class TextDelivery: DictationDelivery {
@@ -25,25 +26,24 @@ final class TextDelivery: DictationDelivery {
     /// The live delivery: the general pasteboard, a synthesized ⌘V, the
     /// Accessibility API and the system clock.
     convenience init() {
-        self.init(paster: ClipboardPaster(pasteboard: SystemClipboard(),
+        self.init(paster: ClipboardPaster(clipboard: SystemClipboard(),
                                           keyPoster: CGEventKeyPoster(),
                                           clock: SystemDictationClock()),
                   probe: AXFocusProbe())
     }
 
-    @discardableResult
     func deliver(_ transcript: String, trailingSpace: Bool) -> DeliveryReport {
         let text = Self.clean(transcript, trailingSpace: trailingSpace)
-        guard !text.isEmpty else { return DeliveryReport(outcome: .droppedEmpty, text: "") }
+        guard !text.isEmpty else { return .droppedEmpty }
 
         let focus = FocusRules.report(for: probe.observe())
         switch focus.verdict {
         case .editable, .unknown:
             paster.paste(text, slowApp: focus.isSlowApp)
-            return DeliveryReport(outcome: .pasted, text: text)
+            return .pasted(text)
         case .notEditable:
             paster.copyOnly(text)
-            return DeliveryReport(outcome: .copied, text: text)
+            return .copied(text)
         }
     }
 

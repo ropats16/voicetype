@@ -1,8 +1,9 @@
 import AppKit
 import ApplicationServices
 
-/// The live focus probe over the Accessibility API. Thin on purpose: every
-/// rule lives in `FocusRules`; this only gathers facts.
+/// The live focus probe over the Accessibility API. Thin on purpose: the
+/// focus rules live in `FocusRules`, the per-app rules in `AppTraits`; this
+/// only gathers facts and sends the opt-in.
 ///
 /// Every AX message carries `messagingTimeout`, so a hung frontmost app can't
 /// freeze us: a message it doesn't answer fails with `kAXErrorCannotComplete`,
@@ -13,62 +14,75 @@ final class AXFocusProbe: FocusProbe {
     /// The AX default is ~6 s per message, and a probe sends up to four, all
     /// on main between transcription and paste. A responsive app answers in a
     /// few ms (Chromium building its tree, tens of ms), so 0.25 s never cuts
-    /// off a live app, while a hung one costs at most ~0.5 s (the set-once
-    /// opt-in plus the focused-element query) before we paste anyway.
+    /// off a live app, while a hung one costs at most ~0.5 s (the opt-in, at
+    /// most every `AppTraits.timedOutRetryInterval`, plus the focused-element
+    /// query) before we paste anyway.
     static let messagingTimeout: Float = 0.25
 
     private let systemWide = AXUIElementCreateSystemWide()
+    private let workspace: NSWorkspace
+    private var apps = AppTraitsCache()
+    private var terminationObserver: NSObjectProtocol?
 
-    /// Per process, set once: whether it's Chromium-hosted, and whether it
-    /// was sent the `AXManualAccessibility` opt-in.
-    private struct AppTraits {
-        let isChromiumHosted: Bool
-        var optedIn: Bool
-    }
-    private var apps: [pid_t: AppTraits] = [:]
-
-    init() {
-        // On the system-wide element this sets the global timeout.
+    init(workspace: NSWorkspace = .shared) {
+        self.workspace = workspace
+        // Process-global: on the system-wide element this sets the timeout of
+        // every AX message this process sends to any element without its own
+        // (`Permissions`' trust check isn't a message, so it's unaffected; any
+        // future AX use inherits 0.25 s unless it sets its own).
         AXUIElementSetMessagingTimeout(systemWide, Self.messagingTimeout)
+        terminationObserver = workspace.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            self?.apps.evict(pid: app.processIdentifier)
+        }
+    }
+
+    deinit {
+        if let terminationObserver { workspace.notificationCenter.removeObserver(terminationObserver) }
     }
 
     func observe() -> FocusObservation {
-        guard let app = NSWorkspace.shared.frontmostApplication else {
+        guard let app = workspace.frontmostApplication else {
             return FocusObservation(focused: focused(), bundleID: nil, isChromiumHosted: false)
         }
-        let traits = optIn(app)
+        var traits = traits(of: app)
+        sendOptInIfNeeded(app, &traits)
+        apps.store(traits, pid: app.processIdentifier)
         return FocusObservation(focused: focused(), bundleID: app.bundleIdentifier,
                                 isChromiumHosted: traits.isChromiumHosted)
     }
 
-    // MARK: - Per app, once
+    // MARK: - Per app
 
-    /// Looks the app up once per pid, and sends it the opt-in until it lands.
+    /// The app's cached traits, or fresh ones (bundle inspected once per process).
+    private func traits(of app: NSRunningApplication) -> AppTraits {
+        apps.traits(pid: app.processIdentifier, launchDate: app.launchDate)
+            ?? AppTraits(launchDate: app.launchDate, isChromiumHosted: Self.isChromiumHosted(app))
+    }
+
+    /// Sets `AXManualAccessibility` on the app element when `traits` says it's due.
     ///
     /// Chromium apps (every Electron app — Claude, VS Code, Slack, Discord —
     /// and Chrome-family browsers) build their AX tree lazily and expose *no*
-    /// focused element until an assistive client sets `AXManualAccessibility`
-    /// on the app element. Native apps ignore it, so it's sent to every app;
-    /// once per process is enough (it lasts for the process's lifetime). A
-    /// timed-out set is retried on the next probe.
-    private func optIn(_ app: NSRunningApplication) -> AppTraits {
-        let pid = app.processIdentifier
-        var traits = apps[pid] ?? AppTraits(isChromiumHosted: Self.isChromiumHosted(app), optedIn: false)
-        if !traits.optedIn {
-            let element = AXUIElementCreateApplication(pid)
-            AXUIElementSetMessagingTimeout(element, Self.messagingTimeout)
-            let result = AXUIElementSetAttributeValue(element, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-            traits.optedIn = result != .cannotComplete
-        }
-        apps[pid] = traits
-        return traits
+    /// focused element until an assistive client sets it. Native apps ignore
+    /// it, so it's sent to every app; `AppTraits.recordOptIn` decides whether
+    /// it's ever sent again.
+    private func sendOptInIfNeeded(_ app: NSRunningApplication, _ traits: inout AppTraits) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard traits.needsOptIn(now: now) else { return }
+        let element = AXUIElementCreateApplication(app.processIdentifier)
+        AXUIElementSetMessagingTimeout(element, Self.messagingTimeout)
+        let result = AXUIElementSetAttributeValue(element, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        traits.recordOptIn(result, now: now)
     }
 
     private static func isChromiumHosted(_ app: NSRunningApplication) -> Bool {
         guard let bundle = app.bundleURL else { return false }
         let frameworks = bundle.appendingPathComponent("Contents/Frameworks").path
         let names = (try? FileManager.default.contentsOfDirectory(atPath: frameworks)) ?? []
-        return FocusRules.isChromiumHosted(frameworks: names)
+        return AppTraits.isChromiumHosted(frameworks: names)
     }
 
     // MARK: - Focused element

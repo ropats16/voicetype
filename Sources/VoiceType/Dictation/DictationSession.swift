@@ -203,16 +203,15 @@ final class DictationSession {
 
     private func deliver(_ transcript: String, trailingSpace: Bool) {
         state = .delivering
-        let report = delivery.deliver(transcript, trailingSpace: trailingSpace)
-        switch report.outcome {
+        switch delivery.deliver(transcript, trailingSpace: trailingSpace) {
         case .droppedEmpty:
             Log.info("Transcription was empty.")
-        case .copied:
-            Log.info("Focused element isn't editable; copied instead of pasting.")
-            feedback.notify(title: "Dictation copied", body: "No text field is focused — paste with ⌘V.")
-            history.delivered(report.text, outcome: .copied)
-        case .pasted:
-            history.delivered(report.text, outcome: .pasted)
+        case .delivered(let delivered):
+            if delivered.method == .copied {
+                Log.info("Focused element isn't editable; copied instead of pasting.")
+                feedback.notify(title: "Dictation copied", body: "No text field is focused — paste with ⌘V.")
+            }
+            history.delivered(delivered)
         }
         state = .idle
     }

@@ -6,7 +6,7 @@ import ApplicationServices
 /// Tracks and requests the two permissions the app needs:
 /// - **Microphone** (`AVCaptureDevice` / TCC) — to record audio.
 /// - **Accessibility** (`AXIsProcessTrusted`) — for the global event tap,
-///   caret lookup, and synthetic ⌘V paste.
+///   the focused-field check, and synthetic ⌘V paste.
 final class Permissions {
     enum MicStatus {
         case authorized, denied, notDetermined, restricted

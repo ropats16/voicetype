@@ -15,7 +15,7 @@ enum FocusVerdict: Equatable {
 /// The verdict plus how long the app may take to read the pasteboard.
 struct FocusReport: Equatable {
     let verdict: FocusVerdict
-    /// Restore the clipboard late (`ClipboardPaster.Timing.slowAppRestoreDelay`).
+    /// The app may read the pasteboard late: restore on `ClipboardPaster.Timing.slowApp`.
     let isSlowApp: Bool
 }
 
@@ -46,15 +46,5 @@ enum FocusRules {
         case .none, .timedOut:
             return observation.bundleID == finderBundleID ? .notEditable : .unknown
         }
-    }
-
-    /// Whether an app bundle whose `Contents/Frameworks` holds `frameworks` is
-    /// Chromium-hosted. Electron ships `Electron Framework.framework`, CEF apps
-    /// `Chromium Embedded Framework.framework`, and Chrome-family browsers
-    /// `<Browser> Framework.framework` (Google Chrome, Microsoft Edge, Brave,
-    /// …) — all the Chromium "<name> Framework.framework" convention. A false
-    /// positive only costs a later restore (still changeCount-guarded).
-    static func isChromiumHosted(frameworks: [String]) -> Bool {
-        frameworks.contains { $0.hasSuffix(" Framework.framework") }
     }
 }

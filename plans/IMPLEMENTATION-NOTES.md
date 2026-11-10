@@ -86,8 +86,8 @@ Key facts (current whisper.cpp has **no Package.swift**, so we vendor sources):
 
 ## Phase 1 status
 Done & compiling (debug+release): config, permissions, audio capture, hotkey (hold =
-Right ⌥ via flagsChanged + device bit), text insertion (paste+restore), indicator
-(NSPanel + AX caret locator w/ fallback chain), menu-bar shell, dictation wiring,
+Right ⌥ via flagsChanged + device bit), text delivery (paste + read-driven clipboard
+restore, `Delivery/`), indicator (NSPanel pinned bottom-left; no caret tracking), menu-bar shell, dictation wiring,
 whisper bridge (verified). **Remaining:** `.app` packaging (`scripts/package_app.sh`,
 `setup.sh`, Makefile wiring) and interactive verification (mic/Accessibility grants +
 real dictation in 5 apps) — the latter requires the human.

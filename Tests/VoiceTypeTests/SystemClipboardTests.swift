@@ -75,4 +75,72 @@ final class SystemClipboardTests: XCTestCase {
         nsPasteboard.setString("someone else", forType: .string)
         XCTAssertNotEqual(pasteboard.changeCount, afterWrite)
     }
+
+    // MARK: - Lazy paste write
+
+    func testPasteWriteIsServedLazilyAndReportsItsFirstRead() {
+        var reads = 0
+        pasteboard.writeForPaste("dictated") { reads += 1 }
+        let written = pasteboard.changeCount
+
+        XCTAssertEqual(reads, 0, "Nothing has read it yet")
+        XCTAssertTrue(pasteboard.isServingPasteText)
+        XCTAssertEqual(nsPasteboard.types?.contains(.string), true, "Promised, not yet provided")
+
+        XCTAssertEqual(nsPasteboard.string(forType: .string), "dictated")
+        XCTAssertEqual(reads, 1, "The provider ran: the first read is reported")
+        XCTAssertEqual(nsPasteboard.string(forType: .string), "dictated")
+        XCTAssertEqual(reads, 1, "Reported once")
+        XCTAssertEqual(pasteboard.changeCount, written, "Reads don't bump changeCount")
+    }
+
+    func testPasteWriteIsMarkedTransientForClipboardManagers() {
+        pasteboard.writeForPaste("dictated") {}
+        XCTAssertEqual(nsPasteboard.types?.contains(.init(ClipboardSnapshot.transientType)), true)
+    }
+
+    func testPasteProviderReleasedWhenReplaced() {
+        pasteboard.writeForPaste("one") {}
+        pasteboard.restore(.empty)
+        XCTAssertFalse(pasteboard.isServingPasteText, "Our restore drops the provider")
+
+        pasteboard.writeForPaste("two") {}
+        pasteboard.write("copied")
+        XCTAssertFalse(pasteboard.isServingPasteText, "Our plain write drops it")
+
+        pasteboard.writeForPaste("three") {}
+        nsPasteboard.clearContents()   // someone else takes the pasteboard
+        nsPasteboard.setString("theirs", forType: .string)
+        let released = expectation(description: "pasteboard finished with the provider")
+        DispatchQueue.main.async { if !self.pasteboard.isServingPasteText { released.fulfill() } }
+        wait(for: [released], timeout: 1)
+    }
+
+    // MARK: - Snapshot: promises and unreadable types
+
+    func testSnapshotSkipsFilePromisesWithoutResolvingThem() {
+        final class Provider: NSObject, NSPasteboardItemDataProvider {
+            var asked: [NSPasteboard.PasteboardType] = []
+            func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem,
+                            provideDataForType type: NSPasteboard.PasteboardType) {
+                asked.append(type)   // provides nothing: an unresolvable promise
+            }
+        }
+        let provider = Provider()
+        let promiseURL = NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-url")
+        let lazyPrivate = NSPasteboard.PasteboardType("com.example.voicetype.lazy")
+        let item = NSPasteboardItem()
+        item.setString("hello", forType: .string)
+        item.setData(Data([0x01]), forType: .init("com.apple.NSFilePromiseItemMetaData"))
+        XCTAssertTrue(item.setDataProvider(provider, forTypes: [promiseURL, lazyPrivate]))
+        XCTAssertTrue(nsPasteboard.writeObjects([item]))
+
+        let types = pasteboard.snapshot().items.flatMap { $0.representations.map(\.type) }
+
+        XCTAssertTrue(types.contains(NSPasteboard.PasteboardType.string.rawValue))
+        XCTAssertFalse(types.contains("com.apple.NSFilePromiseItemMetaData"))
+        XCTAssertFalse(types.contains(promiseURL.rawValue))
+        XCTAssertFalse(provider.asked.contains(promiseURL), "A file promise is never forced")
+        XCTAssertFalse(types.contains(lazyPrivate.rawValue), "A type with no data is left out")
+    }
 }

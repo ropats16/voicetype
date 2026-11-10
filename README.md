@@ -165,7 +165,8 @@ capitalization. Try it in Notes, Chrome, Slack, or the Terminal.
   can't run forever. A notification tells you when that happens.
 - The indicator near your cursor shows **listening → transcribing → done**.
 - Your existing clipboard is restored after each dictation, so dictating never
-  overwrites something you copied.
+  overwrites something you copied. (A password-manager copy isn't put back, so
+  its auto-clear still holds — the dictation stays on the clipboard instead.)
 - Quit anytime from the 🎙️ menu (**Quit VoiceType**).
 
 ---

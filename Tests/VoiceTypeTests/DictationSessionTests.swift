@@ -85,17 +85,18 @@ final class DictationSessionTests: XCTestCase {
     /// Delivers the raw transcript as is (cleanup is `TextDelivery`'s,
     /// tested there), plus a space if asked, with a scripted outcome.
     private final class FakeDelivery: DictationDelivery {
-        var outcome: DeliveryOutcome = .pasted
+        /// How the next transcript is delivered; `nil` drops it.
+        var method: DeliveryMethod? = .pasted
         /// Every transcript handed over, delivered or dropped.
         private(set) var received: [String] = []
         /// The texts that reached the user.
         private(set) var delivered: [String] = []
         func deliver(_ transcript: String, trailingSpace: Bool) -> DeliveryReport {
             received.append(transcript)
-            guard outcome != .droppedEmpty else { return DeliveryReport(outcome: .droppedEmpty, text: "") }
+            guard let method else { return .droppedEmpty }
             let text = trailingSpace ? transcript + " " : transcript
             delivered.append(text)
-            return DeliveryReport(outcome: outcome, text: text)
+            return .delivered(DeliveredText(text: text, method: method))
         }
     }
 
@@ -120,11 +121,8 @@ final class DictationSessionTests: XCTestCase {
     }
 
     private final class FakeHistory: DictationHistory {
-        struct Entry: Equatable { let text: String; let outcome: DeliveryOutcome }
-        private(set) var entries: [Entry] = []
-        func delivered(_ text: String, outcome: DeliveryOutcome) {
-            entries.append(Entry(text: text, outcome: outcome))
-        }
+        private(set) var entries: [DeliveredText] = []
+        func delivered(_ delivered: DeliveredText) { entries.append(delivered) }
     }
 
     private struct FakeError: LocalizedError {
@@ -215,7 +213,7 @@ final class DictationSessionTests: XCTestCase {
 
         engine.finish(text: "Hello world.")
         XCTAssertEqual(delivery.delivered, ["Hello world."])
-        XCTAssertEqual(history.entries, [.init(text: "Hello world.", outcome: .pasted)])
+        XCTAssertEqual(history.entries, [.init(text: "Hello world.", method: .pasted)])
         XCTAssertEqual(feedback.events.last, .dismiss)
         XCTAssertEqual(session.phase, .idle)
     }
@@ -233,7 +231,7 @@ final class DictationSessionTests: XCTestCase {
             var eventsAtDelivery: [FakeFeedback.Event] = []
             func deliver(_ transcript: String, trailingSpace: Bool) -> DeliveryReport {
                 eventsAtDelivery = feedback.events
-                return DeliveryReport(outcome: .pasted, text: transcript)
+                return .pasted(transcript)
             }
         }
         let ordering = OrderingDelivery()
@@ -246,10 +244,10 @@ final class DictationSessionTests: XCTestCase {
     }
 
     func testCopiedOutcomeTellsUserToPaste() {
-        delivery.outcome = .copied
+        delivery.method = .copied
         dictate("hello")
         XCTAssertEqual(delivery.delivered, ["hello"])
-        XCTAssertEqual(history.entries, [.init(text: "hello", outcome: .copied)])
+        XCTAssertEqual(history.entries, [.init(text: "hello", method: .copied)])
         XCTAssertEqual(feedback.events.last,
                        .notify("Dictation copied", "No text field is focused — paste with ⌘V."))
     }
@@ -275,7 +273,7 @@ final class DictationSessionTests: XCTestCase {
 
     func testCanDictateAgainAfterEachEnding() {
         dictate("one")
-        delivery.outcome = .droppedEmpty; dictate("[BLANK_AUDIO]"); delivery.outcome = .pasted
+        delivery.method = nil; dictate("[BLANK_AUDIO]"); delivery.method = .pasted
         session.handle(.holdDown); clock.advance(by: 2); session.handle(.holdUp)
         capture.finishEnd(); engine.finish(.failure(FakeError("x")))
         session.handle(.holdDown); session.handle(.cancel)                              // cancelled
@@ -397,7 +395,7 @@ final class DictationSessionTests: XCTestCase {
             func deliver(_ transcript: String, trailingSpace: Bool) -> DeliveryReport {
                 phaseSeen = session?.phase
                 session?.handle(.toggle)
-                return DeliveryReport(outcome: .pasted, text: transcript)
+                return .pasted(transcript)
             }
         }
         let reentrant = ReentrantDelivery()
@@ -569,14 +567,14 @@ final class DictationSessionTests: XCTestCase {
     }
 
     func testCopiedOutcomeNotifiesExactlyOnce() {
-        delivery.outcome = .copied
+        delivery.method = .copied
         dictate("one")
         dictate("two")
         XCTAssertEqual(feedback.notifications, ["Dictation copied", "Dictation copied"])
     }
 
     func testDroppedTextGetsNoNoticeAndNoHistory() {
-        delivery.outcome = .droppedEmpty
+        delivery.method = nil
         for raw in ["  \n ", "[BLANK_AUDIO]", "[Music]\n(laughs)"] {
             dictate(raw)
         }
@@ -588,11 +586,11 @@ final class DictationSessionTests: XCTestCase {
     }
 
     func testCanDictateAfterDroppedText() {
-        delivery.outcome = .droppedEmpty
+        delivery.method = nil
         dictate("[BLANK_AUDIO]")
-        delivery.outcome = .pasted
+        delivery.method = .pasted
         dictate("next")
-        XCTAssertEqual(history.entries, [.init(text: "next", outcome: .pasted)])
+        XCTAssertEqual(history.entries, [.init(text: "next", method: .pasted)])
     }
 
     func testTrailingSpaceReadWhenRecordingStops() {

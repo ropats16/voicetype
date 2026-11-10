@@ -2,8 +2,9 @@ import Foundation
 
 // The seams between text delivery and the system. `TextDelivery` owns cleanup
 // and the paste-or-copy decision (via `FocusRules`); `ClipboardPaster` owns
-// every clipboard rule (snapshot, burst, restore timing, the changeCount
-// guard). Each port is a thin adapter over a concrete piece (`NSPasteboard`, a
+// every clipboard rule (snapshot, burst, read-driven restore timing, the
+// changeCount guard, ephemeral contents) with `ClipboardSnapshot` saying what
+// a snapshot keeps. Each port is a thin adapter over a concrete piece (`NSPasteboard`, a
 // synthesized ⌘V, the Accessibility API). Time comes from `DictationClock`.
 // Tests drive both with fakes of all four.
 //
@@ -11,13 +12,18 @@ import Foundation
 
 /// The system clipboard.
 protocol Clipboard: AnyObject {
-    /// Bumps on every write by anyone. Lets the paster tell whether the
-    /// clipboard still holds what it wrote.
+    /// Bumps on every write by anyone (not on reads). Lets the paster tell
+    /// whether the clipboard still holds what it wrote.
     var changeCount: Int { get }
-    /// Every item × every type's data, exactly as it is now.
+    /// Every item × every type's data, exactly as it is now (minus what
+    /// `ClipboardSnapshot` leaves out).
     func snapshot() -> ClipboardSnapshot
-    /// Replaces the contents with `text` as a plain string.
+    /// Replaces the contents with `text` as a plain string, for the user to keep.
     func write(_ text: String)
+    /// Replaces the contents with `text` as a plain string served on demand,
+    /// marked transient. `onFirstRead` is called on main the first time anyone
+    /// reads the text — the ⌘V target or, possibly first, a clipboard manager.
+    func writeForPaste(_ text: String, onFirstRead: @escaping () -> Void)
     /// Replaces the contents with `snapshot` (an empty one clears it).
     func restore(_ snapshot: ClipboardSnapshot)
 }

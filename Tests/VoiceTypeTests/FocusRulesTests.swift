@@ -68,25 +68,4 @@ final class FocusRulesTests: XCTestCase {
         XCTAssertEqual(report(.none, chromium: true), FocusReport(verdict: .unknown, isSlowApp: true))
         XCTAssertFalse(report(.element(role: "AXTextArea", valueSettable: true)).isSlowApp)
     }
-
-    func testChromiumHostedFromBundledFrameworks() {
-        let chromium: [[String]] = [
-            ["Electron Framework.framework", "Mantle.framework", "Squirrel.framework"],   // VS Code, Slack
-            ["Google Chrome Framework.framework"],
-            ["Microsoft Edge Framework.framework"],
-            ["Brave Browser Framework.framework"],
-            ["Chromium Embedded Framework.framework"],                                  // CEF apps
-        ]
-        for frameworks in chromium {
-            XCTAssertTrue(FocusRules.isChromiumHosted(frameworks: frameworks), "\(frameworks)")
-        }
-        let native: [[String]] = [
-            [],
-            ["Sparkle.framework", "Sentry.framework"],
-            ["Electron.framework"],   // not the Electron Framework bundle name
-        ]
-        for frameworks in native {
-            XCTAssertFalse(FocusRules.isChromiumHosted(frameworks: frameworks), "\(frameworks)")
-        }
-    }
 }
