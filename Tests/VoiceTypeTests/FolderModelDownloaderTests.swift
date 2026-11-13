@@ -226,6 +226,20 @@ final class FolderModelDownloaderTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: partFolder.path))
     }
 
+    /// The download just checked every file against its pin, so the engine's
+    /// verify before the first load answers from the checksum cache.
+    func testTheFirstLoadsVerifyDoesntHashTheFilesAgain() async throws {
+        let hashes = Reports()
+        let verifier = ModelVerifier(cacheURL: nil, hash: { hashes.add(1); return try ModelVerifier.sha256(of: $0) },
+                                     log: { _ in })
+
+        try await FolderModelDownloader(transport: transport, baseURL: base, verifier: verifier).download(download)
+        let manifest = try Data(contentsOf: download.destination.appendingPathComponent(ModelVerifier.folderManifestName))
+        try verifier.verifyFolder(path: download.destination.path, manifestSHA256: sha(manifest))
+
+        XCTAssertEqual(hashes.values.count, 0, "nothing re-hashed")
+    }
+
     func testAnInstalledFolderIsLeftAlone() async throws {
         try await run()
         try await run()

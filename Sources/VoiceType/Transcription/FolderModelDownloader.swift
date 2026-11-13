@@ -73,8 +73,11 @@ struct FolderModelDownloader: Sendable {
     let transport: DownloadTransport
     /// What each `PinnedFile.source` is relative to.
     var baseURL = URL(string: "https://huggingface.co")!
+    /// Told each finished file's pinned hash, so the engine's verify before
+    /// the first load doesn't hash the whole model a second time. Nil: none.
+    var verifier: ModelVerifier?
 
-    static let live = FolderModelDownloader(transport: URLSessionDownloadTransport())
+    static let live = FolderModelDownloader(transport: URLSessionDownloadTransport(), verifier: .shared)
 
     /// `progress` gets the bytes in place so far, out of `download.totalBytes`.
     func download(_ download: ModelDownload, progress: @escaping @Sendable (Int64) -> Void = { _ in }) async throws {
@@ -126,6 +129,14 @@ struct FolderModelDownloader: Sendable {
 
         try Data(manifest.utf8).write(to: part.appendingPathComponent(ModelVerifier.folderManifestName), options: .atomic)
         try fm.moveItem(at: part, to: destination)
+        // Stamped at the final paths, as the verifier will look them up.
+        if let verifier {
+            for file in download.files {
+                try? verifier.record(path: destination.appendingPathComponent(file.path).path, sha256: file.sha256)
+            }
+            try? verifier.record(path: destination.appendingPathComponent(ModelVerifier.folderManifestName).path,
+                                 sha256: ModelVerifier.sha256(of: Data(manifest.utf8)))
+        }
         Log.info("Downloaded \(download.modelID) to \(destination.path).")
     }
 

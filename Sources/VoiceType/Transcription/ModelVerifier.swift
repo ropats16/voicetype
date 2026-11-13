@@ -111,8 +111,22 @@ final class ModelVerifier: @unchecked Sendable {
         return (actual, elapsed)
     }
 
+    /// Caches `sha256` for the file at `path` as it is now, without hashing
+    /// it: for a caller that has just checked the file against its pin (the
+    /// in-app download), so the next `verify` doesn't hash it again. Same
+    /// stamp as a hash would get, so a later change still forces a re-hash.
+    func record(path: String, sha256: String) throws {
+        let stamp = try Stamp(path: path)
+        lock.withLock { store(Entry(stamp: stamp, sha256: sha256.lowercased()), for: path) }
+    }
+
     /// "0.3s".
     static func seconds(_ t: TimeInterval) -> String { String(format: "%.1fs", t) }
+
+    /// Lowercase hex SHA-256 of `data`.
+    static func sha256(of data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
 
     /// Streams the file through SHA-256 in 4 MB chunks, so memory stays flat.
     static func sha256(of url: URL) throws -> String {
