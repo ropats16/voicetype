@@ -24,6 +24,7 @@ enum ModelDownloadError: LocalizedError, Equatable {
     case http(status: Int)
     case incomplete(path: String, bytes: Int64, expected: Int64)
     case checksumMismatch(path: String)
+    case unsafePath(String)
 
     var errorDescription: String? {
         switch self {
@@ -33,6 +34,8 @@ enum ModelDownloadError: LocalizedError, Equatable {
             return "\(path) is incomplete (\(bytes) of \(expected) bytes). Check your connection and try again to resume."
         case .checksumMismatch(let path):
             return "\(path) doesn't match its pinned checksum (discarded). Try again."
+        case .unsafePath(let path):
+            return "The pinned path \"\(path)\" leaves the model folder."
         }
     }
 }
@@ -78,6 +81,10 @@ struct FolderModelDownloader: Sendable {
         let fm = FileManager.default
         let destination = download.destination, part = download.partFolder
         let manifest = FolderModelPins.manifest(download.files)
+        // The pins are embedded, but a path leaving the folder would write anywhere.
+        if let unsafe = download.files.first(where: { !ModelVerifier.isInsideFolder($0.path) }) {
+            throw ModelDownloadError.unsafePath(unsafe.path)
+        }
 
         if fm.fileExists(atPath: destination.path) {
             if Self.isComplete(destination, files: download.files, manifest: manifest) {
@@ -132,13 +139,17 @@ struct FolderModelDownloader: Sendable {
 
     /// Moves a finished folder's files over the partial one's (they were
     /// complete once; each is re-checked anyway), then drops the folder.
+    /// The enumerator gives paths relative to the folder, not URLs: those
+    /// come back symlink-resolved (/var → /private/var, a linked models
+    /// folder), so cutting the folder's own path off them goes wrong.
     private static func merge(_ folder: URL, into part: URL) throws {
         let fm = FileManager.default
         guard fm.fileExists(atPath: part.path) else { return try fm.moveItem(at: folder, to: part) }
-        let root = folder.standardizedFileURL.path + "/"
-        for case let file as URL in fm.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey]) ?? .init()
-        where (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
-            let relative = String(file.standardizedFileURL.path.dropFirst(root.count))
+        // Listed first: moving files out while enumerating could skip some.
+        let relatives = (fm.enumerator(atPath: folder.path)?.allObjects as? [String]) ?? []
+        for relative in relatives {
+            let file = folder.appendingPathComponent(relative)
+            guard (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
             let target = part.appendingPathComponent(relative)
             try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? fm.removeItem(at: target)

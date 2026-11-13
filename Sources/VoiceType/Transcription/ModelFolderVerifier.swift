@@ -59,10 +59,16 @@ extension ModelVerifier {
             guard parts.count == 2 else { throw malformed }
             let sha = parts[0].lowercased()
             let path = parts[1].trimmingCharacters(in: .whitespaces)
-            let components = path.split(separator: "/")
-            guard sha.count == 64, sha.allSatisfy(\.isHexDigit), !path.isEmpty, !path.hasPrefix("/"),
-                  !components.contains(where: { $0 == ".." || $0 == "." }) else { throw malformed }
+            guard sha.count == 64, sha.allSatisfy(\.isHexDigit), isInsideFolder(path) else { throw malformed }
             return (sha, path)
         }
+    }
+
+    /// A relative path that stays inside its folder: not empty or absolute,
+    /// no `..` or `.` component. The manifest's lines and the download's
+    /// pins both have to be.
+    static func isInsideFolder(_ path: String) -> Bool {
+        !path.isEmpty && !path.hasPrefix("/")
+            && !path.split(separator: "/").contains { $0 == ".." || $0 == "." }
     }
 }

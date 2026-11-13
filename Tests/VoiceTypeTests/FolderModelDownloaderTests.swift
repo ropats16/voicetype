@@ -182,6 +182,50 @@ final class FolderModelDownloaderTests: XCTestCase {
         XCTAssertEqual(transport.requests.map(\.url.lastPathComponent), ["weight.bin"])
     }
 
+    /// A broken finished folder and an earlier partial one both there: the
+    /// finished folder's files move into the partial one at the same
+    /// relative paths, even when the models folder is reached through a
+    /// symlink (an enumerator hands back resolved paths).
+    func testAFolderAndAPartialOneAreMergedAtTheirRelativePaths() async throws {
+        let fm = FileManager.default
+        let real = modelsDir.appendingPathComponent("real", isDirectory: true)
+        try fm.createDirectory(at: real, withIntermediateDirectories: true)
+        let linked = modelsDir.appendingPathComponent("linked", isDirectory: true)
+        try fm.createSymbolicLink(at: linked, withDestinationURL: real)
+        let download = ModelDownload(modelID: "m", files: files, destination: linked.appendingPathComponent("eng/m"))
+        let folder = download.destination, part = download.partFolder
+        let weight = "Encoder.mlmodelc/weights/weight.bin"
+        try fm.createDirectory(at: folder.appendingPathComponent("Encoder.mlmodelc/weights"), withIntermediateDirectories: true)
+        try encoder.write(to: folder.appendingPathComponent(weight))
+        try fm.createDirectory(at: part, withIntermediateDirectories: true)
+        try vocab.write(to: part.appendingPathComponent("vocab.json"))
+
+        try await FolderModelDownloader(transport: transport, baseURL: base).download(download)
+
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent(weight)), encoder)
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("vocab.json")), vocab)
+        XCTAssertEqual(transport.requests.count, 0, "both files were already there")
+        XCTAssertFalse(fm.fileExists(atPath: part.path))
+    }
+
+    /// A pin naming a path outside the model folder is refused before
+    /// anything is written.
+    func testAPinPathLeavingTheFolderIsRefused() async throws {
+        for bad in ["../evil.bin", "/tmp/evil.bin", "a/../../evil.bin", ""] {
+            let files = [PinnedFile(source: "org/m/resolve/abc/vocab.json", path: bad, bytes: Int64(vocab.count),
+                                    sha256: sha(vocab))]
+            let download = ModelDownload(modelID: "m", files: files, destination: download.destination)
+            do {
+                try await FolderModelDownloader(transport: transport, baseURL: base).download(download)
+                XCTFail("\(bad) should be refused")
+            } catch let error as ModelDownloadError {
+                XCTAssertEqual(error, .unsafePath(bad))
+            }
+        }
+        XCTAssertEqual(transport.requests.count, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: partFolder.path))
+    }
+
     func testAnInstalledFolderIsLeftAlone() async throws {
         try await run()
         try await run()
