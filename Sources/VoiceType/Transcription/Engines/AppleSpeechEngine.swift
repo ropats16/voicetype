@@ -66,8 +66,8 @@ struct AppleSpeechEngine: EngineDescriptor {
 
     /// `query`'s answer, or `.notInstalled` if it doesn't come within
     /// `timeout`: an unknown state shows as missing (with the download hint;
-    /// a later load checks again), never as installed — that would try a load
-    /// and report `.failed` for a model that may simply not be there.
+    /// `AppleSpeechModelWatch` checks again), never as installed — that would
+    /// try a load and report `.failed` for a model that may simply not be there.
     static func assetState(within timeout: TimeInterval,
                            _ query: @escaping @Sendable () async -> AppleSpeechAssetState) -> AppleSpeechAssetState {
         do { return try BlockingAsync.run(timeout: timeout, query) } catch {

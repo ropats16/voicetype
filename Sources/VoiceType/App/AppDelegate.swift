@@ -16,6 +16,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         options: EngineOptions(threads: configStore.config.threads),
         idleUnloadAfter: idleUnloadAfter()
     )
+    /// Reloads Apple Speech once its missing model is installed outside
+    /// Settings (the OS, another app); checked by `appleSpeechTimer`, on menu
+    /// open and on a dictation press.
+    private lazy var appleSpeechWatch = AppleSpeechModelWatch(
+        missingModel: { [engine] in
+            engine.status == .missing && engine.model.engine == .appleSpeech ? engine.model : nil
+        },
+        reload: { [weak self] in self?.applyModelSettings() }
+    )
+    private var appleSpeechTimer: Timer?
     /// The last engine-fallback note logged, so a re-resolve doesn't repeat it.
     private var loggedFallback: String?
     /// Mic capture. The mic and max duration are read live, so a Settings change
@@ -67,7 +77,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.onOpenConfig = { [weak self] in self?.openConfig() }
         // Re-read permissions on open: a mic change while Accessibility is
         // denied leaves the status alone but changes a row.
-        menu.onWillOpen = { [weak self] in self?.monitor.recheck(); self?.refreshMenu() }
+        menu.onWillOpen = { [weak self] in
+            self?.monitor.recheck()
+            self?.refreshMenu()
+            self?.appleSpeechWatch.check()
+        }
     }
 
     private func refreshMenu() {
@@ -145,6 +159,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine.onStatusChange = { [weak self] status in self?.engineStatusChanged(status) }
         Log.info("Engine: \(engine.model.engine.displayName). Model: \(engine.model.path) (language \(engine.model.language)); whisper auto-pick for this Mac: \(ModelCatalog.recommended(for: .current).id).")
         engine.load()
+        appleSpeechTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            self?.appleSpeechWatch.check()
+        }
     }
 
     private func resolvedModel() -> ModelSpec {
@@ -211,9 +228,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeys = nil
         let config = configStore.config
         let manager = HotkeyManager(hold: config.hold, toggle: config.toggle, cancelKeyCode: config.cancelKeyCode)
-        manager.onHoldStart = { [weak self] in self?.dictation?.handle(.holdDown) }
+        manager.onHoldStart = { [weak self] in self?.appleSpeechWatch.check(); self?.dictation?.handle(.holdDown) }
         manager.onHoldStop = { [weak self] in self?.dictation?.handle(.holdUp) }
-        manager.onTogglePress = { [weak self] in self?.dictation?.handle(.toggle) }
+        manager.onTogglePress = { [weak self] in self?.appleSpeechWatch.check(); self?.dictation?.handle(.toggle) }
         manager.onCancel = { [weak self] in self?.dictation?.handle(.cancel) }
         let started = manager.start()
         if started { hotkeys = manager }
