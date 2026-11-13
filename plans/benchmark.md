@@ -503,3 +503,26 @@ bench's `phys_footprint` of VoiceType itself says nothing about the engine's
 cost. (3) Accuracy is near Parakeet's and better than whisper medium.en on
 these fixtures, at ~2× Parakeet's short-clip latency; it needs macOS 26 and
 covers fewer languages (see `AppleSpeechEngine.supportedLanguages`).
+
+## Default-engine decision (#15)
+
+All engines re-run on the same M3 Max (2026-11-13, `35980a9`, short runs:
+`--runs 3 --only short` and `--only long` per engine), plus a whole-Mac energy
+proxy (battery-controller power accumulators, no sudo), a `memory_pressure -l
+warn` run per main engine, and M1 8 GB / 60-minute figures **extrapolated**
+from Apple's published specs (no M1 was available; the real runs are #40).
+Results, raw JSON and rationale: [`bench-results/15/`](bench-results/15/README.md).
+
+| engine / model | short p50 | long RTF | short / long WER | energy per audio-hour (whole-Mac Δ) |
+|---|---|---|---|---|
+| parakeet / tdt-0.6b-v3 | 55 ms | 0.0028 | 0.8% / 2.39% | 0.10 Wh |
+| apple-speech / en | 119 ms | 0.0182 | 2.4% / 2.17% | 0.31 Wh |
+| whisper / small.en-q5_1 | 114 ms | 0.0129 | 3.1% / 2.74% | 0.67 Wh |
+| whisper / medium.en | 283 ms | 0.0302 | 3.1% / 3.19% | 1.95 Wh |
+
+Decision (`EnginePolicy`, `config.json` `engine: "auto"`, the default): Turbo
+when the language is explicitly one of its languages and its model is
+downloaded; else Apple Speech on macOS 26 when it takes the language and its
+model is installed; else whisper.cpp (always for auto-detect and on Intel),
+with whisper's existing RAM-tier Automatic model. WhisperKit is never a
+default. Nothing is downloaded automatically.

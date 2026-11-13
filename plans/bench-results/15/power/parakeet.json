@@ -1,0 +1,1446 @@
+{
+ "build": {
+  "configuration": "release",
+  "gitSHA": "35980a9"
+ },
+ "createdAt": "2026-11-13T09:24:12Z",
+ "engine": {
+  "id": "parakeet",
+  "modelBytes": 483107788,
+  "modelFile": "parakeet-tdt-0.6b-v3"
+ },
+ "machine": {
+  "chip": "Apple M3 Max",
+  "efficiencyCores": 4,
+  "memoryBytes": 51539607552,
+  "model": "Mac15,9",
+  "osVersion": "26.7.2 (25G332)",
+  "performanceCores": 12,
+  "thermalStateAtEnd": "nominal",
+  "thermalStateAtStart": "nominal"
+ },
+ "results": {
+  "load": {
+   "adapterSeconds": 0.17370329165714793,
+   "totalSeconds": 0.2658369583368767,
+   "warmUpSeconds": 0.09183774999110028
+  },
+  "long": {
+   "clips": [
+    {
+     "audioSeconds": 623.495,
+     "id": "long-1",
+     "processingSeconds": 1.741633791680215,
+     "realTimeFactor": 0.002793340430444855,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-2",
+     "processingSeconds": 1.7251990000077058,
+     "realTimeFactor": 0.002766981290960963,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-3",
+     "processingSeconds": 1.792508041660767,
+     "realTimeFactor": 0.0028749357118513655,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-4",
+     "processingSeconds": 1.7306103333539795,
+     "realTimeFactor": 0.002775660323425175,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-5",
+     "processingSeconds": 1.7054514166666195,
+     "realTimeFactor": 0.0027353088904748545,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-6",
+     "processingSeconds": 1.7018633749976289,
+     "realTimeFactor": 0.002729554166428967,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-7",
+     "processingSeconds": 1.7147188333328813,
+     "realTimeFactor": 0.002750172548830193,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-8",
+     "processingSeconds": 1.7150472500070464,
+     "realTimeFactor": 0.0027506992838868738,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-9",
+     "processingSeconds": 1.718402333353879,
+     "realTimeFactor": 0.0027560803749089873,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-10",
+     "processingSeconds": 1.7188464166829363,
+     "realTimeFactor": 0.0027567926233296757,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-11",
+     "processingSeconds": 1.7086454999807756,
+     "realTimeFactor": 0.0027404317596464696,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-12",
+     "processingSeconds": 1.7381368333299179,
+     "realTimeFactor": 0.0027877317914817568,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-13",
+     "processingSeconds": 1.7178473750245757,
+     "realTimeFactor": 0.0027551902982775735,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-14",
+     "processingSeconds": 1.7252821666479576,
+     "realTimeFactor": 0.002767114678783242,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-15",
+     "processingSeconds": 1.7152672083175275,
+     "realTimeFactor": 0.0027510520666846204,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-16",
+     "processingSeconds": 1.7434828333207406,
+     "realTimeFactor": 0.002796306038253299,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-17",
+     "processingSeconds": 1.7181611666746903,
+     "realTimeFactor": 0.002755693576812469,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-18",
+     "processingSeconds": 1.7202239999896847,
+     "realTimeFactor": 0.002759002076984875,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-19",
+     "processingSeconds": 1.7467787916539237,
+     "realTimeFactor": 0.002801592300906862,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-20",
+     "processingSeconds": 1.7237426666833926,
+     "realTimeFactor": 0.0027646455331372228,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-21",
+     "processingSeconds": 1.7235333333082963,
+     "realTimeFactor": 0.0027643097912706536,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-22",
+     "processingSeconds": 1.8937647500133608,
+     "realTimeFactor": 0.003037337508742429,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-23",
+     "processingSeconds": 1.7166546250227839,
+     "realTimeFactor": 0.002753277291755,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-24",
+     "processingSeconds": 1.7034716249909252,
+     "realTimeFactor": 0.0027321335776404384,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-25",
+     "processingSeconds": 1.7586187083215918,
+     "realTimeFactor": 0.002820581894516543,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-26",
+     "processingSeconds": 1.7026420416659676,
+     "realTimeFactor": 0.0027308030403867993,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-27",
+     "processingSeconds": 1.7181339583185036,
+     "realTimeFactor": 0.0027556499383611793,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-28",
+     "processingSeconds": 1.7211814999755006,
+     "realTimeFactor": 0.002760537774922815,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-29",
+     "processingSeconds": 1.807115708332276,
+     "realTimeFactor": 0.0028983643947943062,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-30",
+     "processingSeconds": 1.7750411666638684,
+     "realTimeFactor": 0.0028469212530395083,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-31",
+     "processingSeconds": 1.7124062499788124,
+     "realTimeFactor": 0.0027464634840356577,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-32",
+     "processingSeconds": 1.7144229999976233,
+     "realTimeFactor": 0.002749698072955875,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-33",
+     "processingSeconds": 1.7256581666588318,
+     "realTimeFactor": 0.002767717730950259,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-34",
+     "processingSeconds": 1.7380540416634176,
+     "realTimeFactor": 0.002787599005065666,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-35",
+     "processingSeconds": 1.7320824999769684,
+     "realTimeFactor": 0.0027780214756765787,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-36",
+     "processingSeconds": 1.7271265000163112,
+     "realTimeFactor": 0.002770072735172393,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-37",
+     "processingSeconds": 1.7414051249797922,
+     "realTimeFactor": 0.0027929736805905295,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-38",
+     "processingSeconds": 1.7308937500056345,
+     "realTimeFactor": 0.0027761148846512556,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-39",
+     "processingSeconds": 1.7531222916732077,
+     "realTimeFactor": 0.0028117664001687387,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-40",
+     "processingSeconds": 1.7136918749893084,
+     "realTimeFactor": 0.002748525449264723,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-41",
+     "processingSeconds": 1.7197127916733734,
+     "realTimeFactor": 0.002758182169341171,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-42",
+     "processingSeconds": 1.7377827916643582,
+     "realTimeFactor": 0.002787163957472567,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-43",
+     "processingSeconds": 1.7273127916560043,
+     "realTimeFactor": 0.002770371521272832,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-44",
+     "processingSeconds": 1.7568742916628253,
+     "realTimeFactor": 0.002817784090751049,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-45",
+     "processingSeconds": 1.7362326250004116,
+     "realTimeFactor": 0.002784677703911678,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-46",
+     "processingSeconds": 1.7474883749964647,
+     "realTimeFactor": 0.0028027303747367093,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-47",
+     "processingSeconds": 1.7580819166614674,
+     "realTimeFactor": 0.002819720954717307,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-48",
+     "processingSeconds": 1.7835073333408218,
+     "realTimeFactor": 0.0028604998169044207,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-49",
+     "processingSeconds": 1.767638083314523,
+     "realTimeFactor": 0.0028350477282328215,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-50",
+     "processingSeconds": 1.7737082499952521,
+     "realTimeFactor": 0.002844783438512341,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-51",
+     "processingSeconds": 1.7672389583312906,
+     "realTimeFactor": 0.0028344075867990774,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-52",
+     "processingSeconds": 1.761635541653959,
+     "realTimeFactor": 0.002825420479160152,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-53",
+     "processingSeconds": 1.7747296666784678,
+     "realTimeFactor": 0.0028464216500187936,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-54",
+     "processingSeconds": 1.7738257499877363,
+     "realTimeFactor": 0.002844971892297029,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-55",
+     "processingSeconds": 1.763884624990169,
+     "realTimeFactor": 0.002829027698682698,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-56",
+     "processingSeconds": 1.7851106250018347,
+     "realTimeFactor": 0.002863071275634664,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-57",
+     "processingSeconds": 1.8166917083144654,
+     "realTimeFactor": 0.0029137229782347338,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-58",
+     "processingSeconds": 1.7700161250249948,
+     "realTimeFactor": 0.002838861779204316,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-59",
+     "processingSeconds": 1.7981665416737087,
+     "realTimeFactor": 0.0028840111655646134,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-60",
+     "processingSeconds": 1.7877261666581035,
+     "realTimeFactor": 0.0028672662437679588,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-61",
+     "processingSeconds": 1.7931056250235997,
+     "realTimeFactor": 0.002875894153158565,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-62",
+     "processingSeconds": 1.8090782083163504,
+     "realTimeFactor": 0.0029015119741398893,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-63",
+     "processingSeconds": 1.7813091249845456,
+     "realTimeFactor": 0.002856974193834025,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-64",
+     "processingSeconds": 1.8140405416488647,
+     "realTimeFactor": 0.0029094708724991614,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-65",
+     "processingSeconds": 1.8639969166833907,
+     "realTimeFactor": 0.002989594009067259,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-66",
+     "processingSeconds": 1.8495342083333526,
+     "realTimeFactor": 0.0029663978192821954,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-67",
+     "processingSeconds": 1.8473079999967013,
+     "realTimeFactor": 0.0029628272881044777,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-68",
+     "processingSeconds": 1.8240470416494645,
+     "realTimeFactor": 0.0029255199186031394,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-69",
+     "processingSeconds": 1.8217562083445955,
+     "realTimeFactor": 0.0029218457378881874,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-70",
+     "processingSeconds": 1.7919397083460353,
+     "realTimeFactor": 0.002874024183587736,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-71",
+     "processingSeconds": 1.7991974166652653,
+     "realTimeFactor": 0.0028856645468933436,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-72",
+     "processingSeconds": 1.8072255833540112,
+     "realTimeFactor": 0.002898540619177397,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-73",
+     "processingSeconds": 1.7935080000024755,
+     "realTimeFactor": 0.002876539507137147,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-74",
+     "processingSeconds": 1.8317707916721702,
+     "realTimeFactor": 0.002937907748533942,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-75",
+     "processingSeconds": 1.792655500001274,
+     "realTimeFactor": 0.002875172214695024,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-76",
+     "processingSeconds": 1.7988743333262391,
+     "realTimeFactor": 0.0028851463657707586,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-77",
+     "processingSeconds": 1.7901437916734722,
+     "realTimeFactor": 0.0028711437809019673,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-78",
+     "processingSeconds": 1.808830708352616,
+     "realTimeFactor": 0.0029011150183283203,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-79",
+     "processingSeconds": 1.810156708350405,
+     "realTimeFactor": 0.00290324173946929,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-80",
+     "processingSeconds": 1.7745442083396483,
+     "realTimeFactor": 0.002846124200418044,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-81",
+     "processingSeconds": 1.8183609583356883,
+     "realTimeFactor": 0.0029164002250790916,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-82",
+     "processingSeconds": 1.7927738333528396,
+     "realTimeFactor": 0.0028753620050727584,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-83",
+     "processingSeconds": 1.7979379999742378,
+     "realTimeFactor": 0.002883644616194577,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-84",
+     "processingSeconds": 1.7883323333226144,
+     "realTimeFactor": 0.002868238451507413,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-85",
+     "processingSeconds": 1.7629055833385792,
+     "realTimeFactor": 0.002827457450883454,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-86",
+     "processingSeconds": 1.820271791657433,
+     "realTimeFactor": 0.002919464938223134,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 6,
+       "insertions": 5,
+       "rate": 0.02394526795895097,
+       "referenceWords": 1754,
+       "substitutions": 31
+      }
+     }
+    }
+   ],
+   "realTimeFactor": 0.002827680502710913,
+   "wer": {
+    "deletions": 516,
+    "insertions": 430,
+    "rate": 0.02394526795895097,
+    "referenceWords": 150844,
+    "substitutions": 2666
+   }
+  },
+  "memory": {
+   "baselineBytes": 3497102936,
+   "lifetimePeakBytes": 3610513152,
+   "loadedBytes": 3525496480,
+   "peakBytes": 3607973632
+  },
+  "short": {
+   "clips": [],
+   "latency": null,
+   "wer": {
+    "deletions": 0,
+    "insertions": 0,
+    "rate": 0,
+    "referenceWords": 0,
+    "substitutions": 0
+   }
+  }
+ },
+ "schemaVersion": 2,
+ "settings": {
+  "language": "en",
+  "shortRuns": 3,
+  "threads": 0,
+  "whisper": {
+   "audioContext": "off",
+   "suppressNonSpeech": false,
+   "temperatureFallback": true,
+   "vad": null
+  }
+ }
+}

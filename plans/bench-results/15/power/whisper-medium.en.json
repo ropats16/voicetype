@@ -1,0 +1,198 @@
+{
+ "build": {
+  "configuration": "release",
+  "gitSHA": "35980a9"
+ },
+ "createdAt": "2026-11-13T09:41:57Z",
+ "engine": {
+  "id": "whisper",
+  "modelBytes": 1533774781,
+  "modelFile": "ggml-medium.en.bin"
+ },
+ "machine": {
+  "chip": "Apple M3 Max",
+  "efficiencyCores": 4,
+  "memoryBytes": 51539607552,
+  "model": "Mac15,9",
+  "osVersion": "26.7.2 (25G332)",
+  "performanceCores": 12,
+  "thermalStateAtEnd": "fair",
+  "thermalStateAtStart": "nominal"
+ },
+ "results": {
+  "load": {
+   "adapterSeconds": 0.6759179583459627,
+   "totalSeconds": 0.9124158750055358,
+   "warmUpSeconds": 0.23644799998146482
+  },
+  "long": {
+   "clips": [
+    {
+     "audioSeconds": 623.495,
+     "id": "long-1",
+     "processingSeconds": 19.09781391665456,
+     "realTimeFactor": 0.03063025993256491,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 3,
+       "insertions": 3,
+       "rate": 0.03192702394526796,
+       "referenceWords": 1754,
+       "substitutions": 50
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-2",
+     "processingSeconds": 19.83496245832066,
+     "realTimeFactor": 0.03181254454056674,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 3,
+       "insertions": 3,
+       "rate": 0.03192702394526796,
+       "referenceWords": 1754,
+       "substitutions": 50
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-3",
+     "processingSeconds": 20.55705083333305,
+     "realTimeFactor": 0.032970674718053955,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 3,
+       "insertions": 3,
+       "rate": 0.03192702394526796,
+       "referenceWords": 1754,
+       "substitutions": 50
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-4",
+     "processingSeconds": 19.288191041676328,
+     "realTimeFactor": 0.030935598588082227,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 3,
+       "insertions": 3,
+       "rate": 0.03192702394526796,
+       "referenceWords": 1754,
+       "substitutions": 50
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-5",
+     "processingSeconds": 19.254699375014752,
+     "realTimeFactor": 0.030881882573260012,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 3,
+       "insertions": 3,
+       "rate": 0.03192702394526796,
+       "referenceWords": 1754,
+       "substitutions": 50
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-6",
+     "processingSeconds": 19.278166208328912,
+     "realTimeFactor": 0.030919520137818124,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 3,
+       "insertions": 3,
+       "rate": 0.03192702394526796,
+       "referenceWords": 1754,
+       "substitutions": 50
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-7",
+     "processingSeconds": 19.201968624984147,
+     "realTimeFactor": 0.030797309721784693,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 3,
+       "insertions": 3,
+       "rate": 0.03192702394526796,
+       "referenceWords": 1754,
+       "substitutions": 50
+      }
+     }
+    },
+    {
+     "audioSeconds": 623.495,
+     "id": "long-8",
+     "processingSeconds": 19.316544583329232,
+     "realTimeFactor": 0.030981073758938295,
+     "transcript": {
+      "hypothesis": null,
+      "wer": {
+       "deletions": 3,
+       "insertions": 3,
+       "rate": 0.03192702394526796,
+       "referenceWords": 1754,
+       "substitutions": 50
+      }
+     }
+    }
+   ],
+   "realTimeFactor": 0.03124110799638362,
+   "wer": {
+    "deletions": 24,
+    "insertions": 24,
+    "rate": 0.03192702394526796,
+    "referenceWords": 14032,
+    "substitutions": 400
+   }
+  },
+  "memory": {
+   "baselineBytes": 375407432,
+   "lifetimePeakBytes": 2470349200,
+   "loadedBytes": 2425702728,
+   "peakBytes": 2470316432
+  },
+  "short": {
+   "clips": [],
+   "latency": null,
+   "wer": {
+    "deletions": 0,
+    "insertions": 0,
+    "rate": 0,
+    "referenceWords": 0,
+    "substitutions": 0
+   }
+  }
+ },
+ "schemaVersion": 2,
+ "settings": {
+  "language": "en",
+  "shortRuns": 3,
+  "threads": 0,
+  "whisper": {
+   "audioContext": "off",
+   "suppressNonSpeech": false,
+   "temperatureFallback": true,
+   "vad": null
+  }
+ }
+}

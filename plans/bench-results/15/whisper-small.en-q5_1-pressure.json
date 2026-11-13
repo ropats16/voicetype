@@ -1,0 +1,247 @@
+{
+  "build" : {
+    "configuration" : "release",
+    "gitSHA" : "35980a9"
+  },
+  "createdAt" : "2026-11-13T09:45:40Z",
+  "engine" : {
+    "id" : "whisper",
+    "modelBytes" : 190098681,
+    "modelFile" : "ggml-small.en-q5_1.bin"
+  },
+  "machine" : {
+    "chip" : "Apple M3 Max",
+    "efficiencyCores" : 4,
+    "memoryBytes" : 51539607552,
+    "model" : "Mac15,9",
+    "osVersion" : "26.7.2 (25G332)",
+    "performanceCores" : 12,
+    "thermalStateAtEnd" : "nominal",
+    "thermalStateAtStart" : "nominal"
+  },
+  "results" : {
+    "load" : {
+      "adapterSeconds" : 0.17155025000101887,
+      "totalSeconds" : 0.28697658333112486,
+      "warmUpSeconds" : 0.11537070834310725
+    },
+    "long" : {
+      "clips" : [
+
+      ],
+      "realTimeFactor" : null,
+      "wer" : {
+        "deletions" : 0,
+        "insertions" : 0,
+        "rate" : 0,
+        "referenceWords" : 0,
+        "substitutions" : 0
+      }
+    },
+    "memory" : {
+      "baselineBytes" : 9028112,
+      "lifetimePeakBytes" : 535249904,
+      "loadedBytes" : 526861224,
+      "peakBytes" : 535167984
+    },
+    "short" : {
+      "clips" : [
+        {
+          "audioSeconds" : 11,
+          "id" : "jfk",
+          "latenciesSeconds" : [
+            0.12867516666301526,
+            0.12756862500100397,
+            0.12807420833269134
+          ],
+          "medianLatencySeconds" : 0.12807420833269134,
+          "transcript" : {
+            "hypothesis" : "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.",
+            "reference" : "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.",
+            "wer" : {
+              "deletions" : 0,
+              "insertions" : 0,
+              "rate" : 0,
+              "referenceWords" : 22,
+              "substitutions" : 0
+            }
+          }
+        },
+        {
+          "audioSeconds" : 3.73,
+          "id" : "2830-3980-0000",
+          "latenciesSeconds" : [
+            0.10057599999709055,
+            0.09919145834282972,
+            0.10081474998150952
+          ],
+          "medianLatencySeconds" : 0.10057599999709055,
+          "transcript" : {
+            "hypothesis" : "In every way they sought to undermine the authority of St. Paul.",
+            "reference" : "IN EVERY WAY THEY SOUGHT TO UNDERMINE THE AUTHORITY OF SAINT PAUL",
+            "wer" : {
+              "deletions" : 0,
+              "insertions" : 0,
+              "rate" : 0.08333333333333333,
+              "referenceWords" : 12,
+              "substitutions" : 1
+            }
+          }
+        },
+        {
+          "audioSeconds" : 3.495,
+          "id" : "4446-2271-0000",
+          "latenciesSeconds" : [
+            0.0891727083362639,
+            0.08936945832101628,
+            0.08973879169207066
+          ],
+          "medianLatencySeconds" : 0.08936945832101628,
+          "transcript" : {
+            "hypothesis" : "Main Hall liked Alexander because he was an engineer.",
+            "reference" : "MAINHALL LIKED ALEXANDER BECAUSE HE WAS AN ENGINEER",
+            "wer" : {
+              "deletions" : 0,
+              "insertions" : 1,
+              "rate" : 0.25,
+              "referenceWords" : 8,
+              "substitutions" : 1
+            }
+          }
+        },
+        {
+          "audioSeconds" : 4.905,
+          "id" : "61-70968-0000",
+          "latenciesSeconds" : [
+            0.11810412499471568,
+            0.11825866665458307,
+            0.11782495834631845
+          ],
+          "medianLatencySeconds" : 0.11810412499471568,
+          "transcript" : {
+            "hypothesis" : "He began a confused complaint against the wizard, who had vanished behind the curtain on the left.",
+            "reference" : "HE BEGAN A CONFUSED COMPLAINT AGAINST THE WIZARD WHO HAD VANISHED BEHIND THE CURTAIN ON THE LEFT",
+            "wer" : {
+              "deletions" : 0,
+              "insertions" : 0,
+              "rate" : 0,
+              "referenceWords" : 17,
+              "substitutions" : 0
+            }
+          }
+        },
+        {
+          "audioSeconds" : 5.675,
+          "id" : "3570-5694-0001",
+          "latenciesSeconds" : [
+            0.11281962497741915,
+            0.11381412498303689,
+            0.11091537500033155
+          ],
+          "medianLatencySeconds" : 0.11281962497741915,
+          "transcript" : {
+            "hypothesis" : "The utility of consumption as an evidence of wealth is to be classed as a derivative growth.",
+            "reference" : "THE UTILITY OF CONSUMPTION AS AN EVIDENCE OF WEALTH IS TO BE CLASSED AS A DERIVATIVE GROWTH",
+            "wer" : {
+              "deletions" : 0,
+              "insertions" : 0,
+              "rate" : 0,
+              "referenceWords" : 17,
+              "substitutions" : 0
+            }
+          }
+        },
+        {
+          "audioSeconds" : 7.04,
+          "id" : "260-123286-0000",
+          "latenciesSeconds" : [
+            0.10943141666939482,
+            0.10796179168391973,
+            0.10777616666746326
+          ],
+          "medianLatencySeconds" : 0.10796179168391973,
+          "transcript" : {
+            "hypothesis" : "Saturday, August 15th. The sea unbroken all round. No land in sight.",
+            "reference" : "SATURDAY AUGUST FIFTEENTH THE SEA UNBROKEN ALL ROUND NO LAND IN SIGHT",
+            "wer" : {
+              "deletions" : 0,
+              "insertions" : 0,
+              "rate" : 0.08333333333333333,
+              "referenceWords" : 12,
+              "substitutions" : 1
+            }
+          }
+        },
+        {
+          "audioSeconds" : 7.56,
+          "id" : "7176-92135-0001",
+          "latenciesSeconds" : [
+            0.1318058333126828,
+            0.129306708346121,
+            0.13202966668177396
+          ],
+          "medianLatencySeconds" : 0.1318058333126828,
+          "transcript" : {
+            "hypothesis" : "In short, he becomes a prominent figure in London society, and if he is not careful, somebody will say so.",
+            "reference" : "IN SHORT HE BECOMES A PROMINENT FIGURE IN LONDON SOCIETY AND IF HE IS NOT CAREFUL SOMEBODY WILL SAY SO",
+            "wer" : {
+              "deletions" : 0,
+              "insertions" : 0,
+              "rate" : 0,
+              "referenceWords" : 20,
+              "substitutions" : 0
+            }
+          }
+        },
+        {
+          "audioSeconds" : 7.64,
+          "id" : "2961-960-0007",
+          "latenciesSeconds" : [
+            0.12437462498201057,
+            0.12420883332379162,
+            0.12454895832343027
+          ],
+          "medianLatencySeconds" : 0.12437462498201057,
+          "transcript" : {
+            "hypothesis" : "But they have nothing to do with the interpretation of Plato, and in spirit they are opposed to him.",
+            "reference" : "BUT THEY HAVE NOTHING TO DO WITH THE INTERPRETATION OF PLATO AND IN SPIRIT THEY ARE OPPOSED TO HIM",
+            "wer" : {
+              "deletions" : 0,
+              "insertions" : 0,
+              "rate" : 0,
+              "referenceWords" : 19,
+              "substitutions" : 0
+            }
+          }
+        }
+      ],
+      "latency" : {
+        "count" : 24,
+        "maxSeconds" : 0.13202966668177396,
+        "meanSeconds" : 0.11401508506727016,
+        "minSeconds" : 0.0891727083362639,
+        "p50Seconds" : 0.11581954166467767,
+        "p90Seconds" : 0.12911724584118928
+      },
+      "wer" : {
+        "deletions" : 0,
+        "insertions" : 1,
+        "rate" : 0.031496062992125984,
+        "referenceWords" : 127,
+        "substitutions" : 3
+      }
+    }
+  },
+  "schemaVersion" : 2,
+  "settings" : {
+    "language" : "en",
+    "shortRuns" : 3,
+    "threads" : 0,
+    "whisper" : {
+      "audioContext" : "off",
+      "suppressNonSpeech" : false,
+      "temperatureFallback" : true,
+      "vad" : null
+    }
+  }
+}
