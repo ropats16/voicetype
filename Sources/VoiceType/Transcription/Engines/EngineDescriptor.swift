@@ -49,6 +49,11 @@ protocol EngineDescriptor {
     /// Settings); nil when there's nothing useful to say. Default: nil.
     func downloadHint(for spec: ModelSpec) -> ModelDownloadHint?
 
+    /// What Settings' Download button fetches for model `id` of `models`
+    /// into `modelsDir`; nil when the app can't download it itself (the
+    /// model comes by command, or the OS manages it). Default: nil.
+    func inAppDownload(of id: String, in modelsDir: URL) -> ModelDownload?
+
     /// The spec for a model named on the command line (`--bench --model`,
     /// `--selftest --model`): a path, or whatever the engine takes there.
     /// Default: an unverified spec for that path.
@@ -79,6 +84,8 @@ extension EngineDescriptor {
     }
 
     func downloadHint(for spec: ModelSpec) -> ModelDownloadHint? { nil }
+
+    func inAppDownload(of id: String, in modelsDir: URL) -> ModelDownload? { nil }
 
     func spec(forModelArgument argument: String, language: String) -> ModelSpec {
         ModelSpec(path: (argument as NSString).expandingTildeInPath, sha256: nil,

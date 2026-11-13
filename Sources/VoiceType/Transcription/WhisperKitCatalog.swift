@@ -27,7 +27,9 @@ struct WhisperKitModel: FolderModel, Hashable, Identifiable {
 /// `scripts/whisperkit_files.tsv` lists every file with its size and SHA-256
 /// for `scripts/download_whisperkit_model.sh`; `WhisperKitCatalogTests`
 /// checks it adds up to the digests here. Regenerate both with
-/// `scripts/pin_whisperkit_models.py`.
+/// `scripts/pin_whisperkit_models.py`, then the app's copy of the table
+/// (Settings' in-app download, `FolderModelPins`) with
+/// `scripts/embed_folder_model_pins.sh`.
 enum WhisperKitCatalog: FolderModelCatalog {
     static let subdirectory = "whisperkit"
     static let repo = "argmaxinc/whisperkit-coreml"

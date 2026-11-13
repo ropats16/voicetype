@@ -23,6 +23,9 @@ protocol FolderModelCatalog {
     static var subdirectory: String { get }
     /// In Settings' order.
     static var models: [Model] { get }
+    /// Every file of model `id`, for the in-app download (`FolderModelPins`);
+    /// empty for an id not in the catalog.
+    static func pinnedFiles(for id: String) -> [PinnedFile]
 }
 
 extension FolderModelCatalog {

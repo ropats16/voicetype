@@ -5,7 +5,9 @@ model, pinned to one Hugging Face commit, with its size and SHA-256.
 Maintainer tool (not run by setup). Bumping a pin: edit MODELS / revisions
 below, run `python3 -I scripts/pin_whisperkit_models.py > scripts/whisperkit_files.tsv`,
 then copy the printed per-model bytes + manifest digests (stderr) into
-WhisperKitCatalog.swift; WhisperKitCatalogTests checks the two agree.
+WhisperKitCatalog.swift; WhisperKitCatalogTests checks the two agree. Then
+`bash scripts/embed_folder_model_pins.sh` for the app's in-app download
+(FolderModelPinsTests checks it's current).
 
 LFS files' SHA-256 comes from the Hub's metadata; small git files are
 downloaded and hashed.

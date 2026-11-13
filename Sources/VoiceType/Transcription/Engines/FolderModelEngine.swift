@@ -13,6 +13,8 @@ import Foundation
 ///   writes it last and only then renames the folder into place, so a
 ///   partial copy shows the download hint rather than a failed load. Any
 ///   other folder just has to exist. No hashing here: that's the load's job.
+/// - A catalog model downloads in-app (Settings' Download button,
+///   `FolderModelDownloader`) from the same pinned files as its command.
 protocol FolderModelEngine: EngineDescriptor {
     associatedtype Catalog: FolderModelCatalog
 
@@ -48,6 +50,13 @@ extension FolderModelEngine {
     /// The catalog model's command; nil for a custom folder (nothing to fetch).
     func downloadHint(for spec: ModelSpec) -> ModelDownloadHint? {
         Catalog.model(forFolder: spec.path).map { .command(downloadCommand(for: $0)) }
+    }
+
+    /// A catalog model's pinned files, into the folder `resolve` gives it.
+    func inAppDownload(of id: String, in modelsDir: URL) -> ModelDownload? {
+        let files = Catalog.pinnedFiles(for: id)
+        guard !files.isEmpty else { return nil }
+        return ModelDownload(modelID: id, files: files, destination: Catalog.folder(for: id, in: modelsDir))
     }
 
     /// Verified against the pinned manifest when it's a catalog folder.

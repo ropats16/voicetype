@@ -26,6 +26,8 @@ struct ParakeetModel: FolderModel, Hashable, Identifiable {
 /// `scripts/parakeet_files.tsv` lists every file with its size and SHA-256
 /// for `scripts/download_parakeet_model.sh`, which writes the manifest;
 /// `ParakeetCatalogTests` checks the table adds up to the digests here.
+/// Settings' in-app download reads the same table (`FolderModelPins`;
+/// re-embed with `scripts/embed_folder_model_pins.sh` after a change).
 enum ParakeetCatalog: FolderModelCatalog {
     static let subdirectory = "parakeet"
 
