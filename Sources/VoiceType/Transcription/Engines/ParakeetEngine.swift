@@ -2,7 +2,7 @@ import Foundation
 
 /// Parakeet TDT v3 (via FluidAudio) as an `EngineDescriptor`: the opt-in
 /// "Turbo (English/EU)" engine. Apple Silicon only (it runs on the Neural
-/// Engine) and only for its 25 European languages or auto-detect. A model is a folder,
+/// Engine) and only for its 25 European languages, picked explicitly. A model is a folder,
 /// `<models>/parakeet/<id>`, fetched by `make parakeet-model` and verified
 /// against its pinned manifest before loading (`FolderModelEngine`).
 struct ParakeetEngine: FolderModelEngine {
@@ -13,9 +13,12 @@ struct ParakeetEngine: FolderModelEngine {
         environment.hardware.isAppleSilicon ? .available : .unavailable(reason: "Turbo needs Apple Silicon")
     }
 
-    /// The catalog's languages plus auto-detect (v3 detects among its own).
+    /// The catalog's languages, without auto-detect: v3 only detects among
+    /// its own languages, so under Auto-detect a speaker of any other one
+    /// would get confident garbage. Auto-detect falls back to whisper (with
+    /// Settings' "Using Whisper because …" note) until a language is picked.
     var supportedLanguages: Set<String>? {
-        Set(ParakeetCatalog.models.flatMap(\.languages)).union([ModelSpec.autoDetect])
+        Set(ParakeetCatalog.models.flatMap(\.languages))
     }
 
     func automaticModel(in context: ModelContext) -> ParakeetModel {

@@ -38,16 +38,18 @@ final class ParakeetEngineTests: XCTestCase {
         XCTAssertEqual(engine.availability(in: env(false)), .unavailable(reason: "Turbo needs Apple Silicon"))
     }
 
-    /// Shown for its 25 languages and auto-detect; whisper takes the rest.
+    /// Shown for its 25 languages only; whisper takes the rest. Not under
+    /// Auto-detect: v3 only detects among its own languages, so anyone else
+    /// would get confident garbage.
     func testShownOnlyForSupportedLanguages() {
         let appleSilicon = EngineEnvironment(macOSMajor: 15, macOSMinor: 0,
                                              hardware: HardwareProfile(isAppleSilicon: true, memoryBytes: 16 << 30))
         let registry = EngineRegistry([WhisperEngine(), ParakeetEngine()])
-        XCTAssertEqual(engine.supportedLanguages?.count, 26)
-        for code in ["en", "de", "uk", ModelSpec.autoDetect] {
+        XCTAssertEqual(engine.supportedLanguages?.count, 25)
+        for code in ["en", "de", "uk", "EN"] {
             XCTAssertTrue(registry.available(in: appleSilicon, language: code).contains(.parakeet), code)
         }
-        for code in ["ja", "zh", "ar"] {
+        for code in ["ja", "zh", "ar", ModelSpec.autoDetect] {
             XCTAssertFalse(registry.available(in: appleSilicon, language: code).contains(.parakeet), code)
             XCTAssertEqual(registry.select(engineID: "parakeet", language: code, in: appleSilicon).kind, .whisper)
         }
