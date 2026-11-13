@@ -240,6 +240,31 @@ final class FolderModelDownloaderTests: XCTestCase {
         XCTAssertEqual(hashes.values.count, 0, "nothing re-hashed")
     }
 
+    /// At launch, partial downloads nobody resumed for a week are deleted
+    /// (they can be ~1 GB); recent ones, and finished folders, stay.
+    func testStalePartialDownloadsAreRemoved() throws {
+        let fm = FileManager.default
+        func folder(_ path: String, touched daysAgo: Double) throws -> URL {
+            let url = modelsDir.appendingPathComponent(path, isDirectory: true)
+            try fm.createDirectory(at: url, withIntermediateDirectories: true)
+            let file = url.appendingPathComponent("w.bin")
+            try Data([1]).write(to: file)
+            let date = Date(timeIntervalSinceNow: -daysAgo * 86_400)
+            try fm.setAttributes([.modificationDate: date], ofItemAtPath: file.path)
+            try fm.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
+            return url
+        }
+        let stale = try folder("whisperkit/old.part", touched: 8)
+        let recent = try folder("parakeet/new.part", touched: 1)
+        let finished = try folder("whisperkit/done", touched: 30)
+
+        FolderModelDownloader.removeStalePartFolders(in: modelsDir)
+
+        XCTAssertFalse(fm.fileExists(atPath: stale.path))
+        XCTAssertTrue(fm.fileExists(atPath: recent.path))
+        XCTAssertTrue(fm.fileExists(atPath: finished.path))
+    }
+
     func testAnInstalledFolderIsLeftAlone() async throws {
         try await run()
         try await run()

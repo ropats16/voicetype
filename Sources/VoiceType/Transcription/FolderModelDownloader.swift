@@ -169,6 +169,37 @@ struct FolderModelDownloader: Sendable {
         try fm.removeItem(at: folder)
     }
 
+    /// Deletes `<models>/<engine>/<id>.part/` folders untouched (no file in
+    /// them written) for `age`: a cancelled download keeps its partial
+    /// folder to resume from, up to ~1 GB, and one nobody resumed in a week
+    /// isn't coming back. Run at launch, off main, while nothing downloads.
+    static func removeStalePartFolders(in modelsDir: URL, olderThan age: TimeInterval = 7 * 86_400, now: Date = Date()) {
+        let fm = FileManager.default
+        let engines = (try? fm.contentsOfDirectory(at: modelsDir, includingPropertiesForKeys: nil)) ?? []
+        for engine in engines {
+            let parts = ((try? fm.contentsOfDirectory(at: engine, includingPropertiesForKeys: nil)) ?? [])
+                .filter { $0.pathExtension == "part" && $0.hasDirectoryPath }
+            for part in parts where now.timeIntervalSince(lastWrite(in: part)) > age {
+                do {
+                    try fm.removeItem(at: part)
+                    Log.info("Removed a partial download untouched for a week: \(part.path).")
+                } catch {
+                    Log.error("Could not remove \(part.path): \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    /// The newest modification date of `folder` and everything in it.
+    private static func lastWrite(in folder: URL) -> Date {
+        let fm = FileManager.default
+        func modified(_ path: String) -> Date {
+            ((try? fm.attributesOfItem(atPath: path))?[.modificationDate] as? Date) ?? .distantPast
+        }
+        let relatives = (fm.enumerator(atPath: folder.path)?.allObjects as? [String]) ?? []
+        return relatives.map { modified(folder.appendingPathComponent($0).path) }.reduce(modified(folder.path), max)
+    }
+
     private static func size(of url: URL) -> Int64 {
         ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.int64Value ?? 0
     }

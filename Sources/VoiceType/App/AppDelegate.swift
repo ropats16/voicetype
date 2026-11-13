@@ -56,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // menu-bar only, no Dock icon
         Paths.ensureDirectories()
+        DispatchQueue.global(qos: .utility).async { FolderModelDownloader.removeStalePartFolders(in: Paths.modelsDir) }
 
         reportConfigIssues()
         setupMenu()

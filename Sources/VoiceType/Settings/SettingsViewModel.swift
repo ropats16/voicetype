@@ -44,6 +44,9 @@ final class SettingsViewModel: ObservableObject {
     let isFirstLoad: (ModelSpec) -> Bool
     /// Fetches folder models for the Download buttons (SettingsViewModel+ModelDownloads.swift).
     let modelDownloader: ModelDownloading
+    /// Where models are resolved and downloaded (`Paths.modelsDir`;
+    /// injectable so tests never touch the real one).
+    let modelsDir: URL
 
     // MARK: - Published display state
 
@@ -112,7 +115,8 @@ final class SettingsViewModel: ObservableObject {
          environment: EngineEnvironment? = nil,
          speechAssets: SpeechModelAssets = LiveSpeechModelAssets(),
          modelDownloader: ModelDownloading = FolderModelDownloader.live,
-         isFirstLoad: @escaping (ModelSpec) -> Bool = { _ in false }) {
+         isFirstLoad: @escaping (ModelSpec) -> Bool = { _ in false },
+         modelsDir: URL = Paths.modelsDir) {
         self.configStore = configStore
         self.loginItem = loginItem
         self.availableMics = availableMics
@@ -127,6 +131,7 @@ final class SettingsViewModel: ObservableObject {
         self.speechAssets = speechAssets
         self.modelDownloader = modelDownloader
         self.isFirstLoad = isFirstLoad
+        self.modelsDir = modelsDir
         // This Mac's OS, with the injected hardware (so tests control both).
         self.environment = environment ?? EngineEnvironment(macOSMajor: EngineEnvironment.current.macOSMajor,
                                                             macOSMinor: EngineEnvironment.current.macOSMinor,

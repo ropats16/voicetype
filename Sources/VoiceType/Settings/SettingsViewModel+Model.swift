@@ -126,7 +126,7 @@ extension SettingsViewModel {
     /// "Using Whisper (whisper.cpp) because …" while the configured engine
     /// can't run, else nil.
     var engineNote: String? {
-        ModelSelection.select(configStore.config, environment: environment, engines: engines,
+        ModelSelection.select(configStore.config, environment: environment, engines: engines, modelsDir: modelsDir,
                               presentFilenames: presentModelFilenames()).note
     }
 
@@ -241,11 +241,14 @@ extension SettingsViewModel {
     // MARK: - Private
 
     /// What the selected engine resolves models against.
-    var modelContext: ModelContext {
+    var modelContext: ModelContext { modelContext(for: engine) }
+
+    /// What engine `kind` resolves models against.
+    func modelContext(for kind: EngineKind) -> ModelContext {
         let config = configStore.config
-        return ModelContext(language: config.language, hardware: hardware, modelsDir: Paths.modelsDir,
+        return ModelContext(language: config.language, hardware: hardware, modelsDir: modelsDir,
                             presentFilenames: presentModelFilenames(),
-                            customPath: config.customModelPath(for: engine))
+                            customPath: config.customModelPath(for: kind))
     }
 
     /// Re-derives the selected engine (and its model row) from the config.

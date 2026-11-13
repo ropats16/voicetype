@@ -211,24 +211,29 @@ struct SettingsView: View {
 // MARK: - ModelDownloadRow
 
 /// One not-downloaded model: Download, or its progress and Cancel while it
-/// downloads, and why the last try failed.
+/// downloads; Discard for what a stopped download left; and why the last
+/// try failed. Keyed by the row's engine and model, not the selected engine.
 private struct ModelDownloadRow: View {
-    let model: EngineModelOption
+    let model: DownloadableModel
     @ObservedObject var viewModel: SettingsViewModel
 
     var body: some View {
+        let key = model.key
         HStack {
             Text(model.label)
             Spacer()
-            if let progress = viewModel.modelDownloadLabel(model.id) {
+            if let progress = viewModel.modelDownloadLabel(key) {
                 Text(progress).foregroundColor(.secondary).monospacedDigit()
-                Button("Cancel") { viewModel.cancelModelDownload(model.id) }
+                Button("Cancel") { viewModel.cancelModelDownload(key) }
             } else {
-                Button("Download") { viewModel.downloadModel(model.id) }
-                    .disabled(!viewModel.canDownloadModel(model.id))
+                if viewModel.hasPartialDownload(key) {
+                    Button("Discard partial download") { viewModel.discardPartialDownload(key) }
+                }
+                Button(viewModel.hasPartialDownload(key) ? "Resume" : "Download") { viewModel.downloadModel(key) }
+                    .disabled(!viewModel.canDownloadModel(key))
             }
         }
-        if let error = viewModel.modelDownloadError(model.id) {
+        if let error = viewModel.modelDownloadError(key) {
             Text(error)
                 .font(.caption)
                 .foregroundColor(.red)
