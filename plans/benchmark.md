@@ -441,3 +441,34 @@ some windows (FluidAudio #760); `Encoder_v2.mlmodelc` (int8-v2, +143 MB) fixes
 that — bench it before switching. (3) `scripts/package_app.sh` doesn't copy the
 `FluidAudio_FluidAudio.bundle` resource bundle; the ASR path never reads it, but
 FluidAudio's TTS would crash without it.
+
+## WhisperKit (#12) — results
+
+Run 2026-11-13, same Mac and fixtures (M3 Max 48 GB, macOS 26.7.2, release,
+nominal), `--engine whisperkit --language en --runs 3`, WhisperKit 1.1.1
+(argmax-oss-swift), default compute units (mel on GPU, encoder + decoder on the
+Neural Engine), VAD chunking for audio over 30 s. Model folders from
+`make whisperkit-model WHISPERKIT=<id>`. Single uncooled runs — indicative.
+
+| engine / model | load | short p50 | short p90 | long RTF | peak mem | short WER | long WER |
+|---|---|---|---|---|---|---|---|
+| whisperkit / tiny.en | 0.38 s (first ever: ~4.8 s) | 88 ms | 117 ms | 0.0050 (200×) | 543 MiB | 3.1% (4/127) | 6.6–10.1% (varies) |
+| whisperkit / small.en_217MB | 0.57 s (first ever: 17 s) | 383 ms | 455 ms | 0.044 (23×) | 795 MiB | 3.1% (4/127) | 3.5% (61/1754) |
+| whisperkit / large-v3-v20240930_626MB | 1.08 s (first ever: 66 s) | 837 ms | 892 ms | 0.055 (18×) | 693 MiB | 3.1% (4/127) | 2.1% (37/1754) |
+| whisper / tiny.en (above) | 0.13 s | 36 ms | 43 ms | 0.0049 | 498 MiB | 3.1% (4/127) | 6.21% (109/1754) |
+| whisper / medium.en (above) | 0.67 s | 290 ms | 323 ms | 0.0311 (32×) | 2,096 MiB | 3.1% (4/127) | 3.19% (56/1754) |
+
+**WhisperKit notes.** (1) The first load of a model compiles/specializes it for
+the Neural Engine inside the adapter factory (the engine shows `.loading`):
+~4.8 s tiny.en, 17 s small.en_217MB, 66 s large-v3-turbo 626 MB on this Mac;
+Core ML caches it, so later loads take 0.4–1.3 s until an OS update or model
+change. (2) Short-clip latency is 2–3× whisper.cpp's at the same size on an
+M3 Max (the ANE decoder steps token by token); worth re-running on an M1
+8 GB, where the Neural Engine is relatively stronger than the GPU, and trying
+`textDecoderCompute: .cpuAndGPU`. (3) Long-form WER varies run to run: on
+windows that fail WhisperKit's quality checks it falls back to temperature
+sampling, which is unseeded (tiny.en: 6.6–10.1% across runs; with fallback off
+it's deterministic but drops whole windows, 15.8%). Larger models rarely fall
+back. (4) VAD chunking made the 623 s clip ~3× faster (tiny.en 9.9 s → 3.3 s)
+with no WER cost; it doesn't apply to ≤ 30 s clips. (5) `phys_footprint`
+doesn't count Neural Engine memory, so peaks understate the real cost.
