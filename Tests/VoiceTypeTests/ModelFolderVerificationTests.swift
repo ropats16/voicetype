@@ -89,4 +89,55 @@ final class ModelFolderVerificationTests: XCTestCase {
         XCTAssertEqual(hashes, 3)
         XCTAssertEqual(announced, 1, "nothing to hash, so nothing announced")
     }
+
+    // MARK: - Logging
+
+    /// The verifier's log lines, with timings masked ("in 0.0s" → "in Ns").
+    private final class LogLines {
+        var lines: [String] = []
+        func log(_ line: String) {
+            lines.append(line.replacingOccurrences(of: #"in [0-9.]+s"#, with: "in Ns", options: .regularExpression))
+        }
+    }
+
+    func testAFolderVerifyLogsOneSummaryLine() throws {
+        let model = try modelFolder(files)
+        let log = LogLines()
+        let verifier = ModelVerifier(cacheURL: nil, log: log.log)
+
+        try verifier.verify(path: model.path, sha256: model.digest)
+        XCTAssertEqual(log.lines, ["Checksummed 3 files of tiny.en in Ns."])
+    }
+
+    func testAFolderVerifyLogsOnlyWhatItHashed() throws {
+        let model = try modelFolder(files)
+        let log = LogLines()
+        let verifier = ModelVerifier(cacheURL: nil, log: log.log)
+        try verifier.verify(path: model.path, sha256: model.digest)
+        log.lines = []
+
+        try verifier.verify(path: model.path, sha256: model.digest)
+        XCTAssertEqual(log.lines, [], "all cached: nothing hashed, nothing logged")
+
+        let tokenizer = URL(fileURLWithPath: model.path).appendingPathComponent("tokenizer.json")
+        try Data("{}".utf8).write(to: tokenizer)   // same bytes, new file version
+        try verifier.verify(path: model.path, sha256: model.digest)
+        XCTAssertEqual(log.lines, ["Checksummed 1 file of tiny.en in Ns."])
+    }
+
+    func testAFailedFolderVerifyStillLogsWhatItHashed() throws {
+        let model = try modelFolder(files)
+        try Data("evil".utf8).write(to: URL(fileURLWithPath: model.path).appendingPathComponent("tokenizer.json"))
+        let log = LogLines()
+        XCTAssertThrowsError(try ModelVerifier(cacheURL: nil, log: log.log).verify(path: model.path, sha256: model.digest))
+        XCTAssertEqual(log.lines, ["Checksummed 3 files of tiny.en in Ns."])
+    }
+
+    func testASingleFileVerifyStillLogsTheFile() throws {
+        let file = dir.appendingPathComponent("ggml-tiny.en.bin")
+        try Data("weights".utf8).write(to: file)
+        let log = LogLines()
+        try ModelVerifier(cacheURL: nil, log: log.log).verify(path: file.path, sha256: sha256("weights"))
+        XCTAssertEqual(log.lines, ["Checksummed ggml-tiny.en.bin in Ns."])
+    }
 }

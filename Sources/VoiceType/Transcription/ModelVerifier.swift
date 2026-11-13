@@ -55,14 +55,18 @@ final class ModelVerifier: @unchecked Sendable {
 
     private let cacheURL: URL?
     private let hash: (URL) throws -> String
+    /// Where "Checksummed …" lines go (`Log.info`).
+    let log: (String) -> Void
     private let lock = NSLock()
     private var cache: [String: Entry]?
 
-    /// `cacheURL` nil keeps the cache in memory only. `hash` is injectable so
-    /// tests can count hashes.
-    init(cacheURL: URL?, hash: @escaping (URL) throws -> String = { try ModelVerifier.sha256(of: $0) }) {
+    /// `cacheURL` nil keeps the cache in memory only. `hash` and `log` are
+    /// injectable so tests can count hashes and read the log.
+    init(cacheURL: URL?, hash: @escaping (URL) throws -> String = { try ModelVerifier.sha256(of: $0) },
+         log: @escaping (String) -> Void = { Log.info($0) }) {
         self.cacheURL = cacheURL
         self.hash = hash
+        self.log = log
     }
 
     /// Throws `ModelChecksumMismatch` unless the file at `path` hashes to
@@ -82,20 +86,33 @@ final class ModelVerifier: @unchecked Sendable {
     }
 
     /// The file's SHA-256: from the cache while the file is unchanged, else
-    /// hashed (after `willHash`) and cached.
+    /// hashed (after `willHash`), logged and cached.
     func cachedSHA256(of path: String, willHash: () -> Void) throws -> String {
-        let url = URL(fileURLWithPath: path)
+        let result = try cachedSHA256Unlogged(of: path, willHash: willHash)
+        if let seconds = result.hashSeconds {
+            log("Checksummed \(URL(fileURLWithPath: path).lastPathComponent) in \(Self.seconds(seconds)).")
+        }
+        return result.sha256
+    }
+
+    /// `cachedSHA256(of:willHash:)` without the log line, for callers that
+    /// sum up many files in one (`verifyFolder`). `hashSeconds` is how long
+    /// hashing took, nil when the cache answered.
+    func cachedSHA256Unlogged(of path: String, willHash: () -> Void) throws -> (sha256: String, hashSeconds: TimeInterval?) {
         let stamp = try Stamp(path: path)
         if let cached = lock.withLock({ loadedCache()[path] }), cached.stamp == stamp {
-            return cached.sha256
+            return (cached.sha256, nil)
         }
         willHash()
         let start = Date()
-        let actual = try hash(url)
-        Log.info("Checksummed \(url.lastPathComponent) in \(String(format: "%.1f", Date().timeIntervalSince(start)))s.")
+        let actual = try hash(URL(fileURLWithPath: path))
+        let elapsed = Date().timeIntervalSince(start)
         lock.withLock { store(Entry(stamp: stamp, sha256: actual), for: path) }
-        return actual
+        return (actual, elapsed)
     }
+
+    /// "0.3s".
+    static func seconds(_ t: TimeInterval) -> String { String(format: "%.1fs", t) }
 
     /// Streams the file through SHA-256 in 4 MB chunks, so memory stays flat.
     static func sha256(of url: URL) throws -> String {
