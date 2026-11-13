@@ -1,4 +1,7 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.1
+// 6.1 = lowest tools version that accepts `traits:` on a package dependency
+// (used for FluidAudio below). Our own targets stay in the Swift 5 language
+// mode (`swiftLanguageModes: [.v5]`), so the bump changes no source semantics.
 import PackageDescription
 import Foundation  // FileManager, for the x86 conditional exclude below
 
@@ -203,8 +206,17 @@ let package = Package(
     dependencies: [
         // Parakeet (NVIDIA's TDT ASR) on Core ML, for the Parakeet engine. Pinned
         // to one minor line; models load from a local folder, never downloaded
-        // at runtime (ParakeetAdapter).
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", .upToNextMinor(from: "0.17.7")),
+        // at runtime (ParakeetAdapter). `traits: []` drops FluidAudio's only
+        // trait, NemoTextProcessing (a prebuilt Rust text-normalization
+        // xcframework used by its TTS/ITN code, never by ASR). Only honoured by
+        // a 6.2+ toolchain (FluidAudio's Package@swift-6.2.swift declares the
+        // trait); older toolchains still link it. Its TTS/diarizer Swift code
+        // isn't trait-gated and still compiles.
+        .package(
+            url: "https://github.com/FluidInference/FluidAudio.git",
+            .upToNextMinor(from: "0.17.7"),
+            traits: []
+        ),
         // WhisperKit (Core ML / Neural Engine engine, #12). The repo was renamed
         // from argmaxinc/WhisperKit; only its WhisperKit product is linked.
         .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", .upToNextMinor(from: "1.1.1")),
@@ -252,5 +264,6 @@ let package = Package(
             swiftSettings: whisperImporterSettings
         ),
     ],
+    swiftLanguageModes: [.v5],
     cxxLanguageStandard: .cxx17
 )
