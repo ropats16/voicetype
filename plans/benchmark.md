@@ -440,14 +440,16 @@ encoder), single uncooled run — treat as indicative.
 Neural Engine (~17 s, 534 MiB lifetime peak); Core ML caches that, so later
 loads take ~0.2 s, until an OS update or a model change. `phys_footprint` doesn't
 count Neural Engine memory, so the 169 MiB peak understates the real cost.
-Silence decodes to empty text. Follow-ups: (1) our manifest is tools 5.9, so
-FluidAudio's traits can't be turned off — its TTS and diarizer code and the
-NemoTextProcessing library (~8 MB) are compiled in; a tools-6.2 manifest with
-`traits: []` would drop them. (2) The default int8 encoder can flip tokens on
+Silence decodes to empty text. Follow-ups: (1) done in #39: the manifest is
+tools 6.1 with FluidAudio `traits: []`, which drops the NemoTextProcessing
+library — release binary 25.6 MB → 17.2 MB on a Swift 6.2 toolchain (a 6.1
+toolchain still links it; FluidAudio declares the trait only in its
+`Package@swift-6.2.swift`). Its TTS and diarizer Swift code isn't trait-gated
+and still compiles. (2) The default int8 encoder can flip tokens on
 some windows (FluidAudio #760); `Encoder_v2.mlmodelc` (int8-v2, +143 MB) fixes
-that — bench it before switching. (3) `scripts/package_app.sh` doesn't copy the
-`FluidAudio_FluidAudio.bundle` resource bundle; the ASR path never reads it, but
-FluidAudio's TTS would crash without it.
+that — bench it before switching. (3) Decided in #39: `scripts/package_app.sh`
+doesn't copy `FluidAudio_FluidAudio.bundle`. It holds only LuxTts G2P data,
+read by FluidAudio's TTS, which the app never calls; the ASR path never reads it.
 
 ## WhisperKit (#12) — results
 

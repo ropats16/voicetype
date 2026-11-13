@@ -4,7 +4,8 @@ Local, private, system-wide voice dictation for macOS. Hold a hotkey, speak,
 and your words are transcribed **entirely on your Mac** with
 [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (GPU-accelerated) and
 typed into whatever text field you're in — any browser, any app, the Terminal,
-and the Claude Code CLI. Nothing is ever sent to the internet.
+and the Claude Code CLI. No audio or text is ever sent to the internet; the
+only network use is downloading models (see [Privacy](#privacy)).
 
 > **Status:** v1. You install it by building it on your own Mac (steps below).
 > A ready-made download will come later. WhisperKit and Parakeet models
@@ -25,8 +26,9 @@ and the Claude Code CLI. Nothing is ever sent to the internet.
 - **Notifies you** on errors (mic unavailable, model missing, transcription
   failure) and when no text field is focused, instead of failing silently.
 - **Menu-bar only** — a small 🎙️ icon, no Dock icon, stays out of your way.
-- **100% private.** The only time it uses the internet is the one-time model
-  download during setup.
+- **100% private.** It only uses the internet to download models: the
+  one-time setup download, and Settings › Model's **Download** button, which
+  fetches pinned files from `huggingface.co` only when you click it.
 
 ---
 
@@ -330,9 +332,12 @@ the engine's Automatic pick (add `--engine parakeet`, `whisperkit` or
 
 ## Privacy
 
-Everything runs on your Mac. The only network request the app ever makes is the
-one-time model download during setup. No accounts, no telemetry, no audio or text
-leaves your machine.
+Everything runs on your Mac. The app's only network requests are model
+downloads: the one-time setup download, and, only when you click **Download**
+in Settings › Model, WhisperKit/Parakeet model files from `huggingface.co`
+(pinned by commit and SHA-256, verified before use). Apple Speech models come
+from Apple through macOS. No accounts, no telemetry, no audio or text leaves
+your machine.
 
 ---
 
@@ -375,6 +380,12 @@ otherwise shadow the x86 branch and link-fail on duplicate symbols (real Intel
 Macs are unaffected — they only ever compile the manifest as x86). Smoke-test the
 resulting x86 binary with the [`--selftest` check](#troubleshooting) (a plain
 `x86_64` binary runs under Rosetta automatically).
+
+**Binary size.** FluidAudio (Parakeet) is pulled in with `traits: []`, which
+drops its NemoTextProcessing library: the release binary goes from 25.6 MB to
+17.2 MB, but only with a Swift 6.2+ toolchain (a 6.1 toolchain still links
+it). Its `FluidAudio_FluidAudio.bundle` holds only the LuxTts G2P data its TTS
+uses, so `make package` doesn't copy it; the ASR path never reads it.
 
 See `plans/IMPLEMENTATION-NOTES.md` for the durable build/integration details.
 
