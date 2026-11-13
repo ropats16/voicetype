@@ -321,7 +321,9 @@ macOS 14+ with an Apple-Silicon Mac.
   --wav Sources/CWhisper/whisper.cpp/samples/jfk.wav
 ```
 
-It should print the transcript of the sample audio.
+It should print the transcript of the sample audio. Without `--model` it uses
+the engine's Automatic pick (add `--engine parakeet`, `whisperkit` or
+`apple-speech` to check another engine).
 
 ---
 

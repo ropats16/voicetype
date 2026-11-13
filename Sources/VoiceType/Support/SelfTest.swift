@@ -1,21 +1,23 @@
 import Foundation
 
-/// `VoiceType --selftest --model <ggml.bin> --wav <file.wav> [--engine <id>]`
+/// `VoiceType --selftest --wav <file.wav> [--model <ggml.bin>] [--engine <id>]`
 ///
-/// Loads the model and transcribes a WAV file (any sample rate or channel
-/// count), printing the result. The file is played through the audio capture's
+/// Loads the model (with no `--model`, the engine's Automatic pick for this
+/// Mac and English, which must be installed; apple-speech has no model files)
+/// and transcribes a WAV file (any sample rate or channel count), printing
+/// the result. The file is played through the audio capture's
 /// WAV adapter, so it's resampled exactly like the mic. A quick way to confirm
 /// the capture + engine (whisper/Metal by default) path works without granting
 /// permissions or speaking into a mic. For timings and accuracy, use `--bench`
 /// (`Bench/`).
 enum SelfTest {
     static func run(arguments: [String]) -> Int32 {
-        guard let model = CommandLineSupport.value("--model", in: arguments),
-              let wav = CommandLineSupport.value("--wav", in: arguments) else {
+        guard let wav = CommandLineSupport.value("--wav", in: arguments) else {
             FileHandle.standardError.write(Data(
-                "usage: VoiceType --selftest --model <ggml.bin> --wav <file.wav> [--engine <id>]\n".utf8))
+                "usage: VoiceType --selftest --wav <file.wav> [--model <ggml.bin>] [--engine <id>]\n".utf8))
             return 2
         }
+        let modelArgument = CommandLineSupport.value("--model", in: arguments)
         let engineID = CommandLineSupport.value("--engine", in: arguments) ?? EngineKind.whisper.rawValue
         let engines = EngineRegistry.shared
         if case .unavailable(let reason) = engines.availability(ofID: engineID, in: .current) {
@@ -23,16 +25,24 @@ enum SelfTest {
             return 2
         }
         let descriptor = engines.descriptor(for: EngineKind(rawValue: engineID)!)!
+        // whisper: verified against its pinned checksum if the catalog knows the file.
+        let spec: ModelSpec
+        do {
+            spec = try descriptor.commandLineSpec(modelArgument: modelArgument,
+                                                  in: CommandLineSupport.modelContext(language: "en"))
+        } catch {
+            err("selftest failed: \(error.localizedDescription)")
+            return 1
+        }
+        let model = spec.path
 
         do {
             let samples = try CommandLineSupport.samples(fromAudioFile: URL(fileURLWithPath: wav))
             let seconds = Double(samples.count) / AudioCapture.sampleRate
             err("Loaded \(samples.count) samples (\(String(format: "%.1f", seconds))s @ 16 kHz)")
 
-            err("Loading model: \(model)")
-            // whisper: verified against its pinned checksum if the catalog knows the file.
-            let engine = TranscriptionEngine.registered(
-                model: descriptor.spec(forModelArgument: model, language: "en"), options: EngineOptions())
+            err("Loading model: \(model)\(modelArgument == nil ? " (Automatic)" : "")")
+            let engine = TranscriptionEngine.registered(model: spec, options: EngineOptions())
             let loadStart = Date()
             engine.load()
             while [.notLoaded, .loading, .verifying].contains(engine.status) { Thread.sleep(forTimeInterval: 0.01) }

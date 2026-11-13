@@ -273,7 +273,7 @@ final class BenchTests: XCTestCase {
         XCTAssertEqual(BenchEngine.all(options, engines: engines, environment: .mac(15)).map(\.id), ["whisper"])
 
         let apple = try BenchEngine.resolve("apple-speech", options, engines: engines, environment: .mac(26))
-        let spec = apple.modelSpec("/m/thing", "en")
+        let spec = try apple.modelSpec("/m/thing", context())
         XCTAssertEqual(spec.engine, .appleSpeech, "The --model argument becomes that engine's spec")
         XCTAssertEqual(try apple.makeAdapter(spec).transcribe(samples: []).first?.text, "apple-speech:thing")
     }
@@ -293,8 +293,40 @@ final class BenchTests: XCTestCase {
 
     func testAWhisperModelArgumentIsVerifiedByTheCatalog() throws {
         let whisper = try BenchEngine.resolve("whisper", .init(language: "en", threads: 0))
-        XCTAssertEqual(whisper.modelSpec("/m/ggml-tiny.en.bin", "en"), .file("/m/ggml-tiny.en.bin"))
-        XCTAssertNotNil(whisper.modelSpec("/m/ggml-tiny.en.bin", "en").sha256)
+        XCTAssertEqual(try whisper.modelSpec("/m/ggml-tiny.en.bin", context()), .file("/m/ggml-tiny.en.bin"))
+        XCTAssertNotNil(try whisper.modelSpec("/m/ggml-tiny.en.bin", context()).sha256)
+    }
+
+    // MARK: - Model argument (`--bench` / `--selftest`)
+
+    private func context(_ language: String = "en") -> ModelContext {
+        ModelContext(language: language, hardware: HardwareProfile(isAppleSilicon: true, memoryBytes: 16 << 30),
+                     modelsDir: URL(fileURLWithPath: "/m"), presentFilenames: [])
+    }
+
+    func testWithoutModelTheEnginesAutomaticPickLoads() throws {
+        let spec = try FakeEngine().commandLineSpec(modelArgument: nil, in: context("de"))
+        XCTAssertEqual(spec, ModelSpec(path: "/m/fake-fast", sha256: nil, language: "de", engine: .parakeet))
+    }
+
+    func testWithoutModelAMissingAutomaticPickIsAClearError() {
+        let engine = FakeEngine(present: [], hintsCommand: true)
+        XCTAssertThrowsError(try engine.commandLineSpec(modelArgument: nil, in: context())) {
+            XCTAssertEqual($0.localizedDescription,
+                           "no --model given, and Turbo (English/EU)'s Automatic model (/m/fake-fast) isn't installed "
+                           + "— run `make fake-model FAKE=fast`, or pass --model")
+        }
+        XCTAssertThrowsError(try FakeEngine(present: []).commandLineSpec(modelArgument: nil, in: context())) {
+            XCTAssertEqual($0.localizedDescription,
+                           "no --model given, and Turbo (English/EU)'s Automatic model (/m/fake-fast) isn't installed "
+                           + "— Open Settings › Model to download it.")
+        }
+    }
+
+    func testAModelArgumentIsTakenAsGivenEvenIfMissing() throws {
+        // A named model that isn't there loads and reports missing, as before.
+        let spec = try FakeEngine(present: []).commandLineSpec(modelArgument: "/x/mine", in: context("de"))
+        XCTAssertEqual(spec, ModelSpec(path: "/x/mine", sha256: nil, language: "de", engine: .parakeet))
     }
 
     // MARK: - Tuning flags

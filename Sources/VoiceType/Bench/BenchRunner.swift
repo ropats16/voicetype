@@ -18,15 +18,18 @@ struct BenchEngine {
     let id: String
     /// Whether a model is installed (`EngineDescriptor.isPresent`).
     var isPresent: (ModelSpec) -> Bool
-    /// `--model` and `--language` → the spec to load
-    /// (`EngineDescriptor.spec(forModelArgument:language:)`).
-    var modelSpec: (_ argument: String, _ language: String) -> ModelSpec
+    /// `--model` (nil = not given) and the language, in `context` → the spec
+    /// to load (`EngineDescriptor.commandLineSpec(modelArgument:in:)`: no
+    /// `--model` means the Automatic pick).
+    var modelSpec: (_ argument: String?, _ context: ModelContext) throws -> ModelSpec
     let makeAdapter: (ModelSpec) throws -> TranscriptionAdapter
 
     /// A bench-only engine (tests); `modelSpec` takes the argument as an
     /// unverified path.
     init(id: String, isPresent: @escaping (ModelSpec) -> Bool = { FileManager.default.fileExists(atPath: $0.path) },
-         modelSpec: @escaping (String, String) -> ModelSpec = { ModelSpec(path: $0, sha256: nil, language: $1) },
+         modelSpec: @escaping (String?, ModelContext) throws -> ModelSpec = {
+             ModelSpec(path: $0 ?? "", sha256: nil, language: $1.language)
+         },
          makeAdapter: @escaping (ModelSpec) throws -> TranscriptionAdapter) {
         self.id = id
         self.isPresent = isPresent
@@ -37,7 +40,7 @@ struct BenchEngine {
     /// A registered engine, as the app runs it.
     init(_ descriptor: any EngineDescriptor, _ options: Options) {
         self.init(id: descriptor.kind.rawValue, isPresent: descriptor.isPresent,
-                  modelSpec: descriptor.spec(forModelArgument:language:),
+                  modelSpec: descriptor.commandLineSpec(modelArgument:in:),
                   makeAdapter: descriptor.makeAdapter(EngineOptions(threads: options.threads, whisper: options.whisper)))
     }
 

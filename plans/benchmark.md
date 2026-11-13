@@ -25,11 +25,16 @@ make model MODEL=base.en                   # ~142 MiB
   --model "$HOME/Library/Application Support/VoiceType/models/ggml-base.en.bin"
 ```
 
+Without `--model` the engine's Automatic pick for this Mac and `--language` is
+benched, if installed (else it fails naming the model and how to get it), so
+`--bench --engine apple-speech` or `--bench --engine parakeet` needs nothing else.
+`--selftest --wav <file> [--engine <id>]` takes `--model` the same way.
+
 Options:
 
 | flag | default | |
 |---|---|---|
-| `--model <file>` | (required) | model file, directory or id; the engine's descriptor turns it into a `ModelSpec` (`apple-speech` ignores it: `--language` picks the OS model) |
+| `--model <file>` | the engine's Automatic pick (must be installed; `config.json`'s `modelPath` isn't read) | model file, directory or id; the engine's descriptor turns it into a `ModelSpec` (`apple-speech` ignores it: `--language` picks the OS model) |
 | `--engine <id>` | `whisper` | an engine in `EngineRegistry.shared` this Mac can run (`BenchEngine.all`) |
 | `--manifest <tsv>` | `.bench/fixtures/manifest.tsv` | fixture list |
 | `--runs <n>` | `3` | passes over the short clips (round-robin) |
@@ -225,7 +230,7 @@ the model-missing notices, `--selftest --engine` and the bench at once:
    file or directory at `spec.path`; OS-managed models override),
    `installedModelIDs(in:)`, `downloadHint(for:)` (`.command(…)` or
    `.instructions(…)`), `spec(forModelArgument:language:)` (what `--model`
-   means).
+   means; with no `--model`, `resolve(.automatic, in:)` is used).
 3. Register it with one line in `EngineRegistry.shared`
    (`Sources/VoiceType/Transcription/Engines/EngineRegistry.swift`):
 
@@ -243,12 +248,14 @@ the model-missing notices, `--selftest --engine` and the bench at once:
    `try await EngineContract.assertTranscribesJFK(spec:, engines:)` and
    `assertSilenceYieldsNoTags`, skipping when its model isn't installed.
 
-Then `--bench --engine parakeet --model <model file, directory or id>` runs
+Then `--bench --engine parakeet [--model <model file, directory or id>]` runs
 it: `BenchEngine.all` comes from the registry, and an id that's unknown, not
 registered, or unavailable on this Mac fails with the reason. `--model` goes
 through the descriptor's `spec(forModelArgument:language:)` (as an absolute
 path) and `.missing` follows its `isPresent`, so an OS-managed engine can
-take a locale or model id there.
+take a locale or model id there. Omitted, `EngineDescriptor.commandLineSpec`
+(`Support/CommandLineModel.swift`) resolves the Automatic pick and requires
+`isPresent`, failing with the download hint.
 
 ## Code map
 

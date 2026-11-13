@@ -1,6 +1,6 @@
 import Foundation
 
-/// `VoiceType --bench --model <file> [options]`
+/// `VoiceType --bench [--model <file>] [options]`
 ///
 /// Benchmarks a speech engine over the fixtures in a manifest (see
 /// `scripts/fetch_bench_fixtures.sh`), through `TranscriptionEngine` exactly as
@@ -10,12 +10,14 @@ enum BenchCommand {
     static func usage(_ config: Config) -> String {
         let d = WhisperTuning.default, onOff = { (b: Bool) in b ? "on" : "off" }
         return """
-        usage: VoiceType --bench --model <file> [--engine <id>] [--manifest <manifest.tsv>]
+        usage: VoiceType --bench [--model <file>] [--engine <id>] [--manifest <manifest.tsv>]
                          [--runs <n>] [--only short|long] [--language <code>] [--threads <n>]
                          [--suppress-nst on|off] [--audio-ctx off|clip] [--temp-fallback on|off]
                          [--vad off|<silero model>] [--json <out.json>] [--git-sha <sha>]
 
-          --model     model file (or directory) for the engine (e.g. ggml-tiny.en.bin)
+          --model     model file (or directory) for the engine (e.g. ggml-tiny.en.bin); default:
+                      the engine's Automatic pick for this Mac and --language, if installed
+                      (apple-speech has no model files: --language picks its model)
           --engine    engine to bench: \(engineIDs) on this Mac (default: whisper)
           --manifest  fixture list (default: .bench/fixtures/manifest.tsv)
           --runs      passes over the short clips (default: 3)
@@ -43,7 +45,7 @@ enum BenchCommand {
     static func run(arguments: [String]) -> Int32 {
         func value(_ flag: String) -> String? { CommandLineSupport.value(flag, in: arguments) }
         let config = readConfig()
-        guard let model = value("--model") else { return fail(usage(config), code: 2) }
+        if arguments.contains("--help") || arguments.contains("-h") { return fail(usage(config), code: 2) }
 
         let threads = value("--threads").map { Int($0) ?? -1 } ?? config.threads
         guard threads >= 0 else { return fail("--threads must be a non-negative integer", code: 2) }
@@ -64,7 +66,12 @@ enum BenchCommand {
             only = kind
         }
         let manifestURL = URL(fileURLWithPath: value("--manifest") ?? ".bench/fixtures/manifest.tsv")
-        let modelURL = URL(fileURLWithPath: model)
+        let model: ModelSpec
+        do {
+            model = try engine.modelSpec(value("--model"), CommandLineSupport.modelContext(language: options.language))
+        } catch { return fail(error.localizedDescription, code: 1) }
+        if value("--model") == nil { log("No --model: using \(engine.id)'s Automatic pick, \(model.path)") }
+        let modelURL = URL(fileURLWithPath: model.path)
 
         do {
             guard FileManager.default.fileExists(atPath: manifestURL.path) else {
@@ -81,8 +88,7 @@ enum BenchCommand {
             log("Benching \(engine.id) with \(modelURL.lastPathComponent) (\(clips.of(.short).count) short × \(runs), "
                 + "\(clips.of(.long).count) long; language \(options.language), threads \(options.threads); "
                 + "\(tuning.summary))")
-            let runner = BenchRunner(engine: engine, model: engine.modelSpec(modelURL.path, options.language),
-                                     shortRuns: runs)
+            let runner = BenchRunner(engine: engine, model: model, shortRuns: runs)
             let results = try CommandLineSupport.blocking { try await runner.run(clips) }
 
             let report = BenchReport(

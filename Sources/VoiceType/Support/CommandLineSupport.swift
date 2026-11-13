@@ -9,6 +9,14 @@ enum CommandLineSupport {
         return arguments[i + 1]
     }
 
+    /// What an engine's Automatic pick looks at when `--model` is omitted:
+    /// this Mac and the models folder as they are now. A hand-set
+    /// `modelPath` in config.json is ignored: pass it as `--model`.
+    static func modelContext(language: String) -> ModelContext {
+        ModelContext(language: language.isEmpty ? ModelSpec.autoDetect : language, hardware: .current,
+                     modelsDir: Paths.modelsDir, presentFilenames: ModelSelection.presentFilenames())
+    }
+
     /// Decodes an audio file (any sample rate or channel count) to 16 kHz mono
     /// by playing it through the audio capture's WAV adapter — resampled
     /// exactly like the mic. The capture's callbacks arrive on main, so this
