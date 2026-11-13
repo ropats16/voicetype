@@ -2,7 +2,17 @@ import Foundation
 import CWhisper
 
 extension TranscriptionEngine {
-    /// The app's engine: whisper.cpp (Metal-accelerated) behind the engine's
+    /// The app's engine: each `ModelSpec` loads through its own engine's
+    /// adapter (`EngineRegistry.makeAdapter`), so Settings switches engine
+    /// live with `switchModel(to:)`, and `.missing` follows that engine's
+    /// `isPresent`.
+    static func registered(model: ModelSpec, options: EngineOptions, engines: EngineRegistry = .shared,
+                           idleUnloadAfter: TimeInterval? = nil) -> TranscriptionEngine {
+        TranscriptionEngine(model: model, idleUnloadAfter: idleUnloadAfter, isPresent: engines.isPresent,
+                            makeAdapter: engines.makeAdapter(options))
+    }
+
+    /// whisper.cpp alone (`--selftest`, the whisper contract tests): (Metal-accelerated) behind the engine's
     /// checksum check, load, warm-up, job queue and live model switching; the
     /// model is unloaded after `idleUnloadAfter` idle seconds (nil = keep it).
     static func whisper(model: ModelSpec, threads: Int, tuning: WhisperTuning = .default,

@@ -49,15 +49,27 @@ struct Transcript: Equatable {
     var text: String { segments.map(\.text).joined() }
 }
 
-/// What the engine loads: a model file, the SHA-256 it must match (nil = an
-/// unverified custom file), and the language to decode. Build one from the
-/// user's settings with `ModelSelection.resolve`, or for one file with
-/// `ModelSpec.file(_:language:)`.
+/// What the engine loads: which engine, its model (a file or directory), the
+/// SHA-256 a single-file model must match (nil = unverified: a custom file,
+/// a directory, or an OS-managed model), and the language to decode. Build
+/// one from the user's settings with `ModelSelection.select`, or for one
+/// whisper file with `ModelSpec.file(_:language:)`. Another engine is just
+/// another spec, so switching engine is `switchModel(to:)`.
 struct ModelSpec: Equatable {
+    /// A file or directory; for an OS-managed model, whatever identifies it
+    /// to its engine (the engine's `EngineDescriptor.isPresent` decides).
     var path: String
     var sha256: String?
     /// An ISO code ("en", "de", …) or `ModelSpec.autoDetect`.
     var language: String
+    var engine: EngineKind = .whisper
+
+    /// How messages name it: the file name, prefixed by the engine unless
+    /// it's whisper ("Turbo (English/EU) parakeet-tdt-0.6b-v3").
+    var displayName: String {
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        return engine == .whisper ? name : "\(engine.displayName) \(name)"
+    }
 }
 
 /// The speech-to-text engine the app talks to. Owns the model lifecycle —
@@ -77,6 +89,7 @@ struct ModelSpec: Equatable {
 /// once before `load()` and only read on main.
 final class TranscriptionEngine: @unchecked Sendable {
     private let makeAdapter: (ModelSpec) throws -> TranscriptionAdapter
+    private let isPresent: (ModelSpec) -> Bool
     private let verifier: ModelVerifier
 
     /// Loads, switches, unloads and every job run here, one at a time, in
@@ -116,24 +129,28 @@ final class TranscriptionEngine: @unchecked Sendable {
     var onStatusChange: ((TranscriptionStatus) -> Void)?
 
     /// `makeAdapter` loads a model into an adapter; it runs off the main
-    /// thread, after `model`'s checksum (if any) checks out. `idleUnloadAfter`
-    /// nil keeps the model loaded. The app uses `TranscriptionEngine.whisper(...)`.
+    /// thread, after `isPresent` and `model`'s checksum (if any) check out.
+    /// `isPresent` tells a missing model from one that won't load (default: a
+    /// file or directory exists at `spec.path`). `idleUnloadAfter` nil keeps
+    /// the model loaded. The app uses `TranscriptionEngine.registered(...)`.
     init(model: ModelSpec, idleUnloadAfter: TimeInterval? = nil, verifier: ModelVerifier = .shared,
+         isPresent: @escaping (ModelSpec) -> Bool = { FileManager.default.fileExists(atPath: $0.path) },
          makeAdapter: @escaping (ModelSpec) throws -> TranscriptionAdapter) {
         self._model = model
         self._idleUnloadAfter = idleUnloadAfter
         self.verifier = verifier
+        self.isPresent = isPresent
         self.makeAdapter = makeAdapter
     }
 
     /// Starts loading the model in the background. Status becomes `.missing`
-    /// right away if there's no model file, otherwise `.loading` (with
+    /// right away if the model isn't installed (`isPresent`), otherwise `.loading` (with
     /// `.verifying` while a not-yet-checked file is hashed) until the load
     /// settles as `.ready` (after the warm-up) or `.failed` (including a
     /// checksum mismatch, in which case the file is never loaded). Call once.
     func load() {
         let spec = lock.withLock { hasStarted = true; return _model }
-        guard FileManager.default.fileExists(atPath: spec.path) else {
+        guard isPresent(spec) else {
             setStatus(.missing)
             return
         }
@@ -232,8 +249,8 @@ final class TranscriptionEngine: @unchecked Sendable {
     private func load(_ spec: ModelSpec) {
         let previous = loadedSpec ?? idleSpec
         defer { noteActivity() }
-        guard FileManager.default.fileExists(atPath: spec.path) else {
-            return failSwitch(to: spec, .missing, previous: previous, why: "file not found")
+        guard isPresent(spec) else {
+            return failSwitch(to: spec, .missing, previous: previous, why: "model not found")
         }
         do {
             if let expected = spec.sha256 {
@@ -263,7 +280,7 @@ final class TranscriptionEngine: @unchecked Sendable {
     /// handles the `.failed` already sees the engine back on `previous`.
     private func failSwitch(to spec: ModelSpec, _ status: TranscriptionStatus, previous: ModelSpec?, why: String) {
         guard let previous else { return setStatus(status) }
-        let name = { (s: ModelSpec) in URL(fileURLWithPath: s.path).lastPathComponent }
+        let name = { (s: ModelSpec) in s.displayName }
         lock.withLock { _model = previous }
         if adapter == nil && idleSpec == nil {
             do {
