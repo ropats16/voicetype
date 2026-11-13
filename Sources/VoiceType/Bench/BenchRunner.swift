@@ -1,7 +1,10 @@
 import Foundation
 
-/// A speech engine the bench can run: an id for the report and the same
-/// model → adapter factory `TranscriptionEngine` takes.
+/// A speech engine the bench can run: an id for the report, and what the app
+/// itself loads it with — its presence check, how `--model` becomes a
+/// `ModelSpec`, and the model → adapter factory `TranscriptionEngine` takes.
+/// Built from the app's `EngineRegistry`, so registering an engine there is
+/// all it takes to bench it.
 struct BenchEngine {
     /// The engine settings the app takes from `Config`.
     struct Options: Equatable {
@@ -13,19 +16,51 @@ struct BenchEngine {
     }
 
     let id: String
+    /// Whether a model is installed (`EngineDescriptor.isPresent`).
+    var isPresent: (ModelSpec) -> Bool
+    /// `--model` and `--language` → the spec to load
+    /// (`EngineDescriptor.spec(forModelArgument:language:)`).
+    var modelSpec: (_ argument: String, _ language: String) -> ModelSpec
     let makeAdapter: (ModelSpec) throws -> TranscriptionAdapter
 
-    /// Every engine `--bench --engine <id>` accepts, built with the app's own
-    /// factories. To bench a new adapter, add one line here.
-    static func all(_ options: Options) -> [BenchEngine] {
-        [
-            BenchEngine(id: "whisper",
-                        makeAdapter: TranscriptionEngine.whisperAdapter(threads: options.threads,
-                                                                         tuning: options.whisper)),
-        ]
+    /// A bench-only engine (tests); `modelSpec` takes the argument as an
+    /// unverified path.
+    init(id: String, isPresent: @escaping (ModelSpec) -> Bool = { FileManager.default.fileExists(atPath: $0.path) },
+         modelSpec: @escaping (String, String) -> ModelSpec = { ModelSpec(path: $0, sha256: nil, language: $1) },
+         makeAdapter: @escaping (ModelSpec) throws -> TranscriptionAdapter) {
+        self.id = id
+        self.isPresent = isPresent
+        self.modelSpec = modelSpec
+        self.makeAdapter = makeAdapter
     }
 
-    static func named(_ id: String, _ options: Options) -> BenchEngine? { all(options).first { $0.id == id } }
+    /// A registered engine, as the app runs it.
+    init(_ descriptor: any EngineDescriptor, _ options: Options) {
+        self.init(id: descriptor.kind.rawValue, isPresent: descriptor.isPresent,
+                  modelSpec: descriptor.spec(forModelArgument:language:),
+                  makeAdapter: descriptor.makeAdapter(EngineOptions(threads: options.threads, whisper: options.whisper)))
+    }
+
+    /// Every engine `--bench --engine <id>` accepts here: those registered
+    /// in `engines` that this Mac can run.
+    static func all(_ options: Options, engines: EngineRegistry = .shared,
+                    environment: EngineEnvironment = .current) -> [BenchEngine] {
+        engines.available(in: environment).compactMap { engines.descriptor(for: $0) }.map { BenchEngine($0, options) }
+    }
+
+    /// The engine `id` names, or an error saying why it can't be benched
+    /// (unknown id, not in this build, or not on this Mac).
+    static func resolve(_ id: String, _ options: Options, engines: EngineRegistry = .shared,
+                        environment: EngineEnvironment = .current) throws -> BenchEngine {
+        if case .unavailable(let reason) = engines.availability(ofID: id, in: environment) {
+            let known = EngineKind(rawValue: id) == nil
+                ? " (engines: \(EngineKind.allCases.map(\.rawValue).joined(separator: ", ")))" : ""
+            throw BenchError.engineUnavailable("can't bench \(id): \(reason)\(known)")
+        }
+        return BenchEngine(engines.descriptor(for: EngineKind(rawValue: id)!)!, options)
+    }
+
+    static func named(_ id: String, _ options: Options) -> BenchEngine? { try? resolve(id, options) }
 }
 
 /// One fixture, decoded to 16 kHz mono.
@@ -52,11 +87,14 @@ extension Array where Element == BenchClip {
 enum BenchError: LocalizedError {
     case modelMissing(path: String)
     case loadFailed(reason: String)
+    /// `--engine` names one this build or Mac can't run; the message says why.
+    case engineUnavailable(String)
 
     var errorDescription: String? {
         switch self {
-        case .modelMissing(let path): return "model file not found at \(path)"
+        case .modelMissing(let path): return "model not found at \(path)"
         case .loadFailed(let reason): return "model failed to load: \(reason)"
+        case .engineUnavailable(let message): return message
         }
     }
 }
@@ -104,7 +142,8 @@ struct BenchRunner {
                 throw BenchError.loadFailed(reason: error.localizedDescription)
             }
         }
-        let transcriptionEngine = TranscriptionEngine(model: model, verifier: verifier) { [clock, make = engine.makeAdapter] spec in
+        let transcriptionEngine = TranscriptionEngine(model: model, verifier: verifier,
+                                                      isPresent: engine.isPresent) { [clock, make = engine.makeAdapter] spec in
             let start = clock()
             let inner = try make(spec)
             let adapter = TimedAdapter(inner, clock: clock)

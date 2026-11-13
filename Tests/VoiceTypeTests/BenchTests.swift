@@ -265,6 +265,38 @@ final class BenchTests: XCTestCase {
         XCTAssertEqual(Set(ids).count, ids.count)
     }
 
+    func testTheBenchRunsEveryEngineThisMacCanFromTheRegistry() throws {
+        let engines = EngineRegistry([WhisperEngine(), FakeEngine(kind: .appleSpeech, minimumMacOS: 26)])
+        let options = BenchEngine.Options(language: "en", threads: 0)
+        XCTAssertEqual(BenchEngine.all(options, engines: engines, environment: .mac(26)).map(\.id),
+                       ["whisper", "apple-speech"])
+        XCTAssertEqual(BenchEngine.all(options, engines: engines, environment: .mac(15)).map(\.id), ["whisper"])
+
+        let apple = try BenchEngine.resolve("apple-speech", options, engines: engines, environment: .mac(26))
+        let spec = apple.modelSpec("/m/thing", "en")
+        XCTAssertEqual(spec.engine, .appleSpeech, "The --model argument becomes that engine's spec")
+        XCTAssertEqual(try apple.makeAdapter(spec).transcribe(samples: []).first?.text, "apple-speech:thing")
+    }
+
+    func testAnEngineTheBenchCantRunIsAClearError() {
+        let engines = EngineRegistry([WhisperEngine(), FakeEngine(kind: .appleSpeech, minimumMacOS: 26)])
+        let options = BenchEngine.Options(language: "en", threads: 0)
+        for (id, message) in [("apple-speech", "can't bench apple-speech: Apple Speech needs macOS 26"),
+                              ("parakeet", "can't bench parakeet: Turbo (English/EU) isn't in this build"),
+                              ("nope", "can't bench nope: \"nope\" isn't a known engine "
+                                       + "(engines: whisper, whisperkit, parakeet, apple-speech)")] {
+            XCTAssertThrowsError(try BenchEngine.resolve(id, options, engines: engines, environment: .mac(15))) {
+                XCTAssertEqual($0.localizedDescription, message)
+            }
+        }
+    }
+
+    func testAWhisperModelArgumentIsVerifiedByTheCatalog() throws {
+        let whisper = try BenchEngine.resolve("whisper", .init(language: "en", threads: 0))
+        XCTAssertEqual(whisper.modelSpec("/m/ggml-tiny.en.bin", "en"), .file("/m/ggml-tiny.en.bin"))
+        XCTAssertNotNil(whisper.modelSpec("/m/ggml-tiny.en.bin", "en").sha256)
+    }
+
     // MARK: - Tuning flags
 
     private func tuning(_ args: [String], exists: Bool = true) throws -> WhisperTuning {

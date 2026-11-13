@@ -16,7 +16,7 @@ enum BenchCommand {
                          [--vad off|<silero model>] [--json <out.json>] [--git-sha <sha>]
 
           --model     model file (or directory) for the engine (e.g. ggml-tiny.en.bin)
-          --engine    engine to bench: \(engineIDs) (default: whisper)
+          --engine    engine to bench: \(engineIDs) on this Mac (default: whisper)
           --manifest  fixture list (default: .bench/fixtures/manifest.tsv)
           --runs      passes over the short clips (default: 3)
           --only      bench just the short or just the long clips
@@ -52,8 +52,9 @@ enum BenchCommand {
         let options = BenchEngine.Options(language: value("--language") ?? config.language, threads: threads,
                                           whisper: tuning)
         let engineID = value("--engine") ?? "whisper"
-        guard let engine = BenchEngine.named(engineID, options) else {
-            return fail("unknown engine '\(engineID)'\n\n\(usage(config))", code: 2)
+        let engine: BenchEngine
+        do { engine = try BenchEngine.resolve(engineID, options) } catch {
+            return fail("\(error.localizedDescription)\n\n\(usage(config))", code: 2)
         }
         let runs = value("--runs").map { Int($0) ?? 0 } ?? 3
         guard runs > 0 else { return fail("--runs must be a positive integer", code: 2) }
@@ -80,7 +81,7 @@ enum BenchCommand {
             log("Benching \(engine.id) with \(modelURL.lastPathComponent) (\(clips.of(.short).count) short × \(runs), "
                 + "\(clips.of(.long).count) long; language \(options.language), threads \(options.threads); "
                 + "\(tuning.summary))")
-            let runner = BenchRunner(engine: engine, model: .file(modelURL.path, language: options.language),
+            let runner = BenchRunner(engine: engine, model: engine.modelSpec(modelURL.path, options.language),
                                      shortRuns: runs)
             let results = try CommandLineSupport.blocking { try await runner.run(clips) }
 

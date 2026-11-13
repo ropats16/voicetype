@@ -29,8 +29,8 @@ Options:
 
 | flag | default | |
 |---|---|---|
-| `--model <file>` | (required) | model file passed to the engine's adapter factory |
-| `--engine <id>` | `whisper` | an id from `BenchEngine.all` |
+| `--model <file>` | (required) | model file, directory or id; the engine's descriptor turns it into a `ModelSpec` |
+| `--engine <id>` | `whisper` | an engine in `EngineRegistry.shared` this Mac can run (`BenchEngine.all`) |
 | `--manifest <tsv>` | `.bench/fixtures/manifest.tsv` | fixture list |
 | `--runs <n>` | `3` | passes over the short clips (round-robin) |
 | `--only short\|long` | both | skip one half (the long clip dominates run time) |
@@ -202,18 +202,51 @@ Bump `schemaVersion` (in `BenchReport`) on any breaking change. v2 (#7) added
 
 ## Adding an engine
 
-Write a `TranscriptionAdapter` (see `WhisperAdapter`) and the factory the app
-will use for it, then register it with one line in `BenchEngine.all(_:)`
-(`Sources/VoiceType/Bench/BenchRunner.swift`); `options` carries the app's
-`language`/`threads`:
+One registration plugs an engine into the app, Settings, config validation,
+the model-missing notices, `--selftest --engine` and the bench at once:
 
-```swift
-BenchEngine(id: "parakeet", makeAdapter: TranscriptionEngine.parakeetAdapter(language: options.language)),
-```
+1. Write the adapter: a `TranscriptionAdapter` (see `WhisperAdapter`). The
+   engine calls it only on its own serial queue, so it needs no locking;
+   segments carry seconds from the start of the submitted audio.
+2. Describe the engine in one new file,
+   `Sources/VoiceType/Transcription/Engines/<Name>Engine.swift`: a struct
+   conforming to `EngineDescriptor` (see `EngineDescriptor.swift` for each
+   requirement's contract, `WhisperEngine.swift` for a full example).
+   Required: `kind` (its `EngineKind` case — ids `whisperkit`, `parakeet`,
+   `apple-speech` already exist), `resolve(_:in:)` (the user's `ModelChoice`
+   → `ModelSpec` with `engine: kind`), `makeAdapter(_:)` and
+   `acknowledgement`. Override as needed: `availability(in:)` (e.g.
+   `environment.isAtLeast(macOS: 26)`, `environment.hardware.isAppleSilicon`;
+   return `.unavailable(reason: "Apple Speech needs macOS 26")`),
+   `supportedLanguages` (nil = any; include `"auto"` only if it detects the
+   language), `models` (Settings' picker rows), `isPresent(_:)` (default: a
+   file or directory at `spec.path`; OS-managed models override),
+   `installedModelIDs(in:)`, `downloadHint(for:)` (`.command(…)` or
+   `.instructions(…)`), `spec(forModelArgument:language:)` (what `--model`
+   means).
+3. Register it with one line in `EngineRegistry.shared`
+   (`Sources/VoiceType/Transcription/Engines/EngineRegistry.swift`):
 
-and run `--bench --engine parakeet --model <its model file or directory>`. The
-engine's `load()` reports `.missing` if `--model` isn't an existing path, so an
-engine without a model file still needs some path (e.g. its asset directory).
+   ```swift
+   static let shared = EngineRegistry([
+       WhisperEngine(),
+       ParakeetEngine(),
+   ])
+   ```
+
+4. Credit it: append a `## <EngineKind.displayName>` section to
+   `ACKNOWLEDGEMENTS.md` (`AcknowledgementsTests` checks every registered
+   engine has one).
+5. Test it with the shared contract (`Tests/VoiceTypeTests/EngineContract.swift`):
+   `try await EngineContract.assertTranscribesJFK(spec:, engines:)` and
+   `assertSilenceYieldsNoTags`, skipping when its model isn't installed.
+
+Then `--bench --engine parakeet --model <model file, directory or id>` runs
+it: `BenchEngine.all` comes from the registry, and an id that's unknown, not
+registered, or unavailable on this Mac fails with the reason. `--model` goes
+through the descriptor's `spec(forModelArgument:language:)` (as an absolute
+path) and `.missing` follows its `isPresent`, so an OS-managed engine can
+take a locale or model id there.
 
 ## Code map
 
@@ -221,7 +254,10 @@ engine without a model file still needs some path (e.g. its asset directory).
   fixture decoding, machine info, output.
 - `Transcription/WhisperTuning.swift` — the whisper knobs and `audio_ctx` sizing;
   `WhisperAdapter.fullParams` maps them onto `whisper_full_params`.
-- `Bench/BenchRunner.swift` — `BenchEngine` registry, the run loop, memory sampling.
+- `Bench/BenchRunner.swift` — `BenchEngine` (built from `EngineRegistry`), the
+  run loop, memory sampling.
+- `Transcription/Engines/` — `EngineKind`, `EngineDescriptor`, `EngineRegistry`,
+  one descriptor per engine.
 - `Bench/BenchReport.swift` — JSON schema + table. `Bench/BenchStats.swift` —
   percentiles, RTF. `Bench/WordErrorRate.swift` — normalization + WER.
   `Bench/BenchManifest.swift` — manifest parsing.
