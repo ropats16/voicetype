@@ -254,8 +254,10 @@ logs the problem at startup and the menu shows a **Config issue** warning.
 
 | Setting               | What it does                                        |
 |-----------------------|-----------------------------------------------------|
-| `model`               | `auto` (default: pick for this Mac) or a model id, e.g. `small.en-q5_1`. |
-| `modelPath`           | A specific model `.bin` file; overrides `model` when set (default empty). |
+| `engine`              | Speech engine: `whisper` (default). If it can't run on this Mac or in the chosen language, VoiceType uses whisper and says why (the setting is kept). |
+| `model`               | whisper's model: `auto` (default: pick for this Mac) or a model id, e.g. `small.en-q5_1`. |
+| `modelPath`           | A specific whisper model `.bin` file; overrides `model` when set (default empty). |
+| `engineModels`        | Other engines' model picks by engine id, e.g. `{"whisperkit": "auto"}` (unset = `auto`). |
 | `keepModelWarm`       | Keep the model loaded (`true`) or unload it when idle (`false`). Unset = automatic: unload only on ≤ 8 GB Macs. |
 | `modelIdleMinutes`    | Idle minutes before unloading, when not kept warm (default 5). |
 | `hold`                | The hold-to-talk hotkey (see above).                |
