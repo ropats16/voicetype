@@ -144,3 +144,24 @@ private final class InstallTracker: @unchecked Sendable {
     func end(_ locale: Locale) { lock.withLock { running[locale.identifier] = nil } }
     func progress(of locale: Locale) -> Double? { lock.withLock { running[locale.identifier]?.fractionCompleted } }
 }
+
+/// The OS-managed speech models as Settings sees them (Apple Speech): the
+/// state for a language, and the download the user starts. A port, so the
+/// view model is testable without the OS.
+protocol SpeechModelAssets: Sendable {
+    func state(language: String) async -> AppleSpeechAssetState
+    func install(language: String, progress: @escaping @Sendable (Double) -> Void) async throws
+}
+
+/// `AppleSpeechAssets`, or unsupported below macOS 26.
+struct LiveSpeechModelAssets: SpeechModelAssets {
+    func state(language: String) async -> AppleSpeechAssetState {
+        guard #available(macOS 26, *) else { return .unsupported }
+        return await AppleSpeechAssets.state(for: language)
+    }
+
+    func install(language: String, progress: @escaping @Sendable (Double) -> Void) async throws {
+        guard #available(macOS 26, *) else { throw AppleSpeechError.unavailable }
+        try await AppleSpeechAssets.install(language: language, progress: progress)
+    }
+}

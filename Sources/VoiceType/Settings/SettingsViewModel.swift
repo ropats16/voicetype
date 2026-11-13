@@ -37,6 +37,8 @@ final class SettingsViewModel: ObservableObject {
     /// The engines this build has, and the Mac they're gated on.
     let engines: EngineRegistry
     let environment: EngineEnvironment
+    /// Apple Speech's OS-managed models (state, download).
+    let speechAssets: SpeechModelAssets
 
     // MARK: - Published display state
 
@@ -60,6 +62,11 @@ final class SettingsViewModel: ObservableObject {
     /// The last failed switch (the engine went back to the previous model);
     /// cleared by the next load or settings change.
     @Published var modelSwitchError: String?
+    /// Apple Speech's model for the language; nil for other engines (or not
+    /// yet asked). SettingsViewModel+SpeechAssets.swift.
+    @Published var speechAssetState: AppleSpeechAssetState?
+    /// Why the last download failed; cleared by the next one.
+    @Published var speechAssetError: String?
 
     // MARK: - Hotkey display state (Task 4b)
 
@@ -93,7 +100,8 @@ final class SettingsViewModel: ObservableObject {
          modelStatus: TranscriptionStatus,
          onModelSettingsChange: @escaping () -> Void,
          engines: EngineRegistry = .shared,
-         environment: EngineEnvironment? = nil) {
+         environment: EngineEnvironment? = nil,
+         speechAssets: SpeechModelAssets = LiveSpeechModelAssets()) {
         self.configStore = configStore
         self.loginItem = loginItem
         self.availableMics = availableMics
@@ -105,6 +113,7 @@ final class SettingsViewModel: ObservableObject {
         self.currentModel = currentModel
         self.onModelSettingsChange = onModelSettingsChange
         self.engines = engines
+        self.speechAssets = speechAssets
         // This Mac's OS, with the injected hardware (so tests control both).
         self.environment = environment ?? EngineEnvironment(macOSMajor: EngineEnvironment.current.macOSMajor,
                                                             macOSMinor: EngineEnvironment.current.macOSMinor,

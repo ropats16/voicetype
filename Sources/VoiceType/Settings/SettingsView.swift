@@ -122,6 +122,23 @@ struct SettingsView: View {
                 }
                 .disabled(!viewModel.isLanguageSelectable)
 
+                // Apple Speech: the OS-managed model for the language.
+                if let state = viewModel.speechAssetLabel {
+                    HStack {
+                        Text("Speech model")
+                        Spacer()
+                        Text(state).foregroundColor(.secondary)
+                        if viewModel.canDownloadSpeechModel {
+                            Button("Download") { Task { await viewModel.downloadSpeechModel() } }
+                        }
+                    }
+                    if let error = viewModel.speechAssetError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+
                 Picker("Keep model loaded",
                        selection: Binding(
                            get: { viewModel.keepWarm },
@@ -139,6 +156,9 @@ struct SettingsView: View {
                 }
             } header: {
                 Text("Model")
+            }
+            .task(id: "\(viewModel.engine.rawValue)|\(viewModel.language)") {
+                await viewModel.refreshSpeechAssets()
             }
 
             // MARK: Hotkeys
