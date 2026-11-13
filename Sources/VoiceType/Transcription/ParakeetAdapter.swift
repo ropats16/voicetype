@@ -35,8 +35,9 @@ extension TranscriptionEngine {
 ///
 /// Loads only from a local folder (`AsrModels.loadLocal`): FluidAudio never
 /// touches the network here. Its API is async (an actor); the engine calls
-/// adapters synchronously on its own serial queue, so each job blocks that
-/// queue until the decode finishes (see `wait`).
+/// adapters synchronously on its own serial queue, so the load and each job
+/// block that queue, with a deadline, until they finish (see `wait`).
+/// After a deadline, Parakeet is refused until the abandoned work ends.
 final class ParakeetAdapter: TranscriptionAdapter {
     private let manager: AsrManager
     private let decoderLayers: Int
@@ -48,10 +49,23 @@ final class ParakeetAdapter: TranscriptionAdapter {
     /// model's 15 s window anyway, so this costs nothing.
     static let minimumSamples = 16_000
 
+    /// A first load compiles the model for this Mac's Neural Engine (tens of
+    /// seconds); allow for slower Macs.
+    static let loadTimeout: TimeInterval = 900
+
+    /// Far beyond real time (Parakeet runs ~100x): just a backstop.
+    static func jobTimeout(sampleCount: Int) -> TimeInterval {
+        max(120, Double(sampleCount) / AudioCapture.sampleRate)
+    }
+
     init(folder: URL, language: String) throws {
         let models: AsrModels
         do {
-            models = try AsrModels.loadLocal(from: folder, version: .v3)
+            models = try Self.wait(timeout: Self.loadTimeout) {
+                try await Self.offPool { try AsrModels.loadLocal(from: folder, version: .v3) }
+            }
+        } catch let busy as BlockingAsync.StillBusy {
+            throw busy
         } catch {
             Log.error("Parakeet model failed to load from \(folder.path): \(error.localizedDescription)")
             throw TranscriptionError.modelLoadFailed(path: folder.path)
@@ -67,7 +81,7 @@ final class ParakeetAdapter: TranscriptionAdapter {
         let audio = samples.count >= Self.minimumSamples
             ? samples : samples + [Float](repeating: 0, count: Self.minimumSamples - samples.count)
 
-        let result = try Self.wait { [manager, decoderLayers, language] in
+        let result = try Self.wait(timeout: Self.jobTimeout(sampleCount: audio.count)) { [manager, decoderLayers, language] in
             var state = TdtDecoderState.make(decoderLayers: decoderLayers)
             return try await manager.transcribe(audio, decoderState: &state, language: language)
         }
@@ -83,24 +97,26 @@ final class ParakeetAdapter: TranscriptionAdapter {
         return ParakeetSegmenter.segments(from: tokens, clipDuration: duration)
     }
 
-    /// Runs `work` on Swift concurrency's pool and blocks the calling thread
-    /// until it finishes. Can't deadlock: the caller is the engine's GCD
-    /// queue (never a cooperative-pool thread or main), and FluidAudio's ASR
-    /// path runs on its own actor without hopping to the main actor.
-    private static func wait<T>(_ work: @escaping @Sendable () async throws -> T) throws -> T {
-        let box = ResultBox<T>()
-        let done = DispatchSemaphore(value: 0)
-        Task.detached(priority: .userInitiated) {
-            do { box.result = .success(try await work()) } catch { box.result = .failure(error) }
-            done.signal()
-        }
-        done.wait()
-        return try box.result!.get()
-    }
-}
+    /// Shared by every Parakeet adapter: one engine's abandoned load or job
+    /// must hold off the next adapter's too.
+    private static let bridge = BlockingAsync.Bridge(name: "Parakeet")
 
-/// Hands a result from the detached task back to the waiting thread; the
-/// semaphore orders the write before the read.
-private final class ResultBox<T>: @unchecked Sendable {
-    var result: Result<T, Error>?
+    /// Runs `work` on Swift concurrency's pool and blocks the calling thread
+    /// until it finishes or `timeout` passes (`BlockingAsync.TimedOut`; then
+    /// `StillBusy` until the abandoned work ends). Can't deadlock: the caller
+    /// is the engine's GCD queue (never a cooperative-pool thread or main), and
+    /// FluidAudio's ASR path runs on its own actor without hopping to the main
+    /// actor.
+    private static func wait<T>(timeout: TimeInterval, _ work: @escaping @Sendable () async throws -> T) throws -> T {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        return try bridge.run(timeout: timeout, work)
+    }
+
+    /// Runs a long synchronous call (the model load) on a GCD thread, so it
+    /// doesn't hold a cooperative-pool thread meanwhile.
+    private static func offPool<T>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async { continuation.resume(with: Result { try work() }) }
+        }
+    }
 }
