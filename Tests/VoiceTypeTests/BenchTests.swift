@@ -122,7 +122,7 @@ final class BenchTests: XCTestCase {
 
     private struct Fixture {
         let adapter: FakeAdapter
-        let runner: BenchRunner
+        var runner: BenchRunner
         let clips: [BenchClip]
     }
 
@@ -154,6 +154,19 @@ final class BenchTests: XCTestCase {
         XCTAssertEqual(results.load.adapterSeconds, 2, accuracy: 1e-9)
         XCTAssertEqual(results.load.warmUpSeconds, 0.1, accuracy: 1e-9, "1 s of silence at 0.1× real time")
         XCTAssertEqual(results.load.totalSeconds, 2.1, accuracy: 1e-9)
+    }
+
+    /// A bench load counts as the model's first load on this Mac, so the
+    /// app then doesn't say "Preparing" for a model already compiled.
+    func testASuccessfulLoadIsRecordedInTheLoadHistory() async throws {
+        var f = fixture()
+        let history = ModelLoadHistory(url: nil, osBuild: "25B78")
+        f.runner.loadHistory = history
+        XCTAssertFalse(history.hasLoaded(f.runner.model))
+
+        _ = try await f.runner.run(f.clips)
+
+        XCTAssertTrue(history.hasLoaded(f.runner.model))
     }
 
     func testShortClipsRunRepeatedlyThroughTheEngineAfterTheWarmUp() async throws {

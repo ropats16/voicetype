@@ -88,7 +88,7 @@ struct EngineRegistry {
     /// Whether loading `spec` now is its first load on this Mac and OS build
     /// for an engine that compiles models then (`compilesOnFirstLoad`), so
     /// "Loading" can say it'll take a while.
-    func isFirstLoad(_ spec: ModelSpec, history: ModelLoadHistory) -> Bool {
+    func isFirstLoad(_ spec: ModelSpec, history: ModelLoadRecording) -> Bool {
         descriptor(for: spec.engine)?.compilesOnFirstLoad == true && !history.hasLoaded(spec)
     }
 

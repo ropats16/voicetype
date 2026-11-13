@@ -35,12 +35,25 @@ final class FirstLoadTests: XCTestCase {
 
         XCTAssertTrue(history.hasLoaded(tiny))
         XCTAssertFalse(history.hasLoaded(base), "per model")
+        history.flush()
         XCTAssertTrue(ModelLoadHistory(url: historyURL, osBuild: "25B78").hasLoaded(tiny), "persisted")
+    }
+
+    /// The build (e.g. "25B78"), not the version string: a point update and
+    /// a rapid security response each get their own build, so their own compile.
+    func testTheOSBuildIsTheKernelsBuildNumber() {
+        let build = ModelLoadHistory.currentOSBuild
+        XCTAssertFalse(build.isEmpty)
+        XCTAssertTrue(build.allSatisfy { $0.isLetter || $0.isNumber }, build)
+        XCTAssertTrue(ProcessInfo.processInfo.operatingSystemVersionString.contains(build),
+                      "\(ProcessInfo.processInfo.operatingSystemVersionString) names build \(build)")
     }
 
     /// macOS recompiles Core ML models after an update.
     func testAnOSUpdateMakesTheNextLoadAFirstLoadAgain() {
-        ModelLoadHistory(url: historyURL, osBuild: "25B78").recordLoad(tiny)
+        let history = ModelLoadHistory(url: historyURL, osBuild: "25B78")
+        history.recordLoad(tiny)
+        history.flush()
         XCTAssertFalse(ModelLoadHistory(url: historyURL, osBuild: "25C56").hasLoaded(tiny))
     }
 

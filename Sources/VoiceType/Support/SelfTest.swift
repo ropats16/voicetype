@@ -48,6 +48,9 @@ enum SelfTest {
             while [.notLoaded, .loading, .verifying].contains(engine.status) { Thread.sleep(forTimeInterval: 0.01) }
             switch engine.status {
             case .ready:
+                // The app then won't call this model's next load a first one.
+                ModelLoadHistory.shared.recordLoad(spec)
+                ModelLoadHistory.shared.flush()
                 err("Model loaded and warmed up in \(String(format: "%.2f", Date().timeIntervalSince(loadStart)))s")
             case .missing:
                 err("selftest failed: model not found at \(model)")

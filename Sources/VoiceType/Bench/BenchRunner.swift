@@ -125,6 +125,11 @@ struct BenchRunner {
     /// run's hashing doesn't count as load time.
     var verifier: ModelVerifier = .shared
 
+    /// Told about a successful load, so the app doesn't later announce a
+    /// first load ("Preparing model…") for a model the bench already
+    /// compiled. Nil: not recorded.
+    var loadHistory: ModelLoadRecording?
+
     init(engine: BenchEngine, model: ModelSpec, shortRuns: Int) {
         self.engine = engine
         self.model = model
@@ -158,7 +163,7 @@ struct BenchRunner {
         transcriptionEngine.load()
         while [.notLoaded, .loading, .verifying].contains(transcriptionEngine.status) { try await Task.sleep(nanoseconds: 1_000_000) }
         switch transcriptionEngine.status {
-        case .ready: break
+        case .ready: loadHistory?.recordLoad(model)
         case .missing: throw BenchError.modelMissing(path: model.path)
         case .failed(let reason): throw BenchError.loadFailed(reason: reason)
         case .notLoaded, .loading, .verifying: throw BenchError.loadFailed(reason: "\(engine.id) never finished loading")

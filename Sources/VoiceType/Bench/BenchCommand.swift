@@ -88,8 +88,10 @@ enum BenchCommand {
             log("Benching \(engine.id) with \(modelURL.lastPathComponent) (\(clips.of(.short).count) short × \(runs), "
                 + "\(clips.of(.long).count) long; language \(options.language), threads \(options.threads); "
                 + "\(tuning.summary))")
-            let runner = BenchRunner(engine: engine, model: model, shortRuns: runs)
+            var runner = BenchRunner(engine: engine, model: model, shortRuns: runs)
+            runner.loadHistory = ModelLoadHistory.shared
             let results = try CommandLineSupport.blocking { try await runner.run(clips) }
+            ModelLoadHistory.shared.flush()
 
             let report = BenchReport(
                 createdAt: ISO8601DateFormatter().string(from: Date()),

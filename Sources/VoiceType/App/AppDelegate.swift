@@ -39,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                 engine: EngineReadiness(engine, history: loadHistory))
     /// Which models have loaded on this OS build, so a Core ML model's first
     /// load says it's being prepared rather than just "Loading".
-    private let loadHistory = ModelLoadHistory.shared
+    private let loadHistory: ModelLoadRecording = ModelLoadHistory.shared
     /// Built at launch, not on the first press, so the first dictation
     /// doesn't pay for the indicator, delivery and session setup.
     private var dictation: DictationSession?
