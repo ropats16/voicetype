@@ -171,6 +171,39 @@ final class AppReadinessTests: XCTestCase {
                        "bad Open Settings › Model to download it.")
     }
 
+    /// WhisperKit, Parakeet: Settings downloads the model, so the menu and
+    /// the notice send the user there first (the command still works), and
+    /// the menu line opens Settings rather than the models folder.
+    func testInAppDownloadHintsPointAtSettings() {
+        let hint = ModelDownloadHint.inApp(command: "make whisperkit-model WHISPERKIT=tiny.en")
+        let missing = ReadinessIssue.modelMissing(path: "/m/whisperkit/tiny.en", download: hint)
+        XCTAssertEqual(missing.detail,
+                       "Model missing — download it in Settings › Model (or run `make whisperkit-model WHISPERKIT=tiny.en`)")
+        XCTAssertEqual(missing.action, .openSettings)
+
+        // Installed but broken: Settings only offers models that aren't there.
+        let failed = ReadinessIssue.modelFailed(reason: "x", download: hint)
+        XCTAssertEqual(failed.detail,
+                       "Model failed to load — see log, or try `make whisperkit-model WHISPERKIT=tiny.en` to re-download it")
+        XCTAssertEqual(failed.action, .openModelsFolder)
+
+        let engine = EngineReadiness(status: .missing, modelPath: "/m/whisperkit/tiny.en", download: hint)
+        XCTAssertEqual(ModelHints.notice(for: .missing, engine: engine),
+                       ModelNotice(title: "VoiceType: model not downloaded",
+                                   body: "Download it in Settings › Model, or run `make whisperkit-model WHISPERKIT=tiny.en`.",
+                                   log: "Model not downloaded (/m/whisperkit/tiny.en). Download it in Settings › Model, "
+                                       + "or run `make whisperkit-model WHISPERKIT=tiny.en`."))
+        let broken = EngineReadiness(status: .failed(reason: "bad"), modelPath: "/m/whisperkit/tiny.en", download: hint)
+        XCTAssertEqual(ModelHints.notice(for: .failed(reason: "bad"), engine: broken)?.body,
+                       "bad Try `make whisperkit-model WHISPERKIT=tiny.en` to re-download it, "
+                           + "or delete its folder and download it again in Settings › Model.")
+    }
+
+    func testOSManagedModelsOpenSettingsToo() {
+        let hint = ModelDownloadHint.instructions("Open Settings › Model to download it.")
+        XCTAssertEqual(ReadinessIssue.modelMissing(path: "en-US", download: hint).action, .openSettings)
+    }
+
     func testFailedSwitchNoticeSkipsTheRedownloadHint() {
         // The engine already fell back to the previous model: a hint would
         // name the wrong file.

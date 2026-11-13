@@ -14,7 +14,8 @@ struct StatusMenuContent: Equatable {
     var header: String
     /// SF Symbol for the status item.
     var symbol: String
-    /// Only for a status that needs the user; a transient one is in the header.
+    /// For a status that needs the user, and for a first load (it takes a
+    /// while, so it says why); another transient one is just the header.
     var reason: Row?
     /// A missing or broken model ranked behind another issue (e.g. Accessibility
     /// denied), so it isn't lost until that one is fixed.
@@ -33,7 +34,8 @@ struct StatusMenuContent: Equatable {
             reason = Row(title: issue.detail, action: issue.action)
         } else {
             symbol = "mic"
-            reason = nil
+            reason = status == .starting(.modelPreparing)
+                ? Row(title: ReadinessIssue.modelPreparing.detail, action: nil) : nil
         }
         let modelIssue = AppReadiness.issues(for: inputs).first {
             switch $0 { case .modelMissing, .modelFailed: return true; default: return false }

@@ -78,7 +78,7 @@ final class WhisperKitEngineTests: XCTestCase {
 
     func testDownloadHintNamesTheModel() {
         let spec = engine.resolve(.named("base.en"), in: context())
-        XCTAssertEqual(engine.downloadHint(for: spec), .command("make whisperkit-model WHISPERKIT=base.en"))
+        XCTAssertEqual(engine.downloadHint(for: spec), .inApp(command: "make whisperkit-model WHISPERKIT=base.en"))
         XCTAssertNil(engine.downloadHint(for: engine.resolve(.named("my-finetune"), in: context())))
     }
 

@@ -86,6 +86,14 @@ final class StatusMenuContentTests: XCTestCase {
         XCTAssertNil(menu.reason)
     }
 
+    /// A first load takes a while: the menu says why, not just "Preparing".
+    func testAFirstLoadShowsItsDetail() {
+        let menu = content(.starting(.modelPreparing), engine: .loading)
+        XCTAssertEqual(menu.header, "VoiceType — Preparing model…")
+        XCTAssertEqual(menu.symbol, "mic")
+        XCTAssertEqual(menu.reason, .init(title: "Preparing model for this Mac (first load, ~20 s)…", action: nil))
+    }
+
     func testConfigLineOnlyWithErrorsCountsAllIssues() {
         let warning = ConfigIssue(severity: .warning, message: "w")
         let error = ConfigIssue(severity: .error, message: "e")

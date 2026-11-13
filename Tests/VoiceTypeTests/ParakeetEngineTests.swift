@@ -57,7 +57,7 @@ final class ParakeetEngineTests: XCTestCase {
 
     func testDownloadHintAndCommandLineModel() {
         let spec = engine.resolve(.automatic, in: context())
-        XCTAssertEqual(engine.downloadHint(for: spec), .command("make parakeet-model"))
+        XCTAssertEqual(engine.downloadHint(for: spec), .inApp(command: "make parakeet-model"))
         XCTAssertNil(engine.downloadHint(for: engine.resolve(.named("my-parakeet"), in: context())),
                      "a custom folder has nothing to fetch")
         XCTAssertEqual(engine.spec(forModelArgument: "/x/parakeet-tdt-0.6b-v3", language: "fr"),

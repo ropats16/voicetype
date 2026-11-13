@@ -143,6 +143,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .openModelsFolder:
             Paths.ensureDirectories()
             NSWorkspace.shared.open(Paths.modelsDir)
+        case .openSettings:
+            openSettings()
         }
     }
 

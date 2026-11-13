@@ -29,6 +29,7 @@ struct AutomaticModelMissing: LocalizedError {
         let fix: String
         switch hint {
         case .command(let command)?: fix = "run `\(command)`, or pass --model"
+        case .inApp(let command)?: fix = "run `\(command)` (or download it in Settings › Model), or pass --model"
         case .instructions(let text)?: fix = text
         case nil: fix = "pass --model"
         }

@@ -176,7 +176,7 @@ extension SettingsViewModel {
         switch first {
         case .instructions(let text):
             return "Not downloaded — \(text)"
-        case .command(let command):
+        case .command(let command), .inApp(let command):
             let id = missing[0].id
             guard !hints.allSatisfy({ $0 == first }), command.hasSuffix(id) else { return "Not downloaded — run: \(command)" }
             return "Not downloaded — run: \(command.dropLast(id.count))<name>"
@@ -224,7 +224,7 @@ extension SettingsViewModel {
         case .missing:
             let spec = currentModel()
             switch engines.downloadHint(for: spec) {
-            case .command(let command)?:
+            case .command(let command)?, .inApp(let command)?:
                 return isDownloadableInApp(spec) ? "Not downloaded. Click Download below, or run: \(command)"
                     : "Not downloaded. Run: \(command)"
             case .instructions(let text)?: return text

@@ -17,6 +17,9 @@ enum ReadinessAction: Equatable {
     case requestMicrophone
     /// Where the model file goes, to drop in or re-download one.
     case openModelsFolder
+    /// Settings' Model section, for a model it downloads (Download button,
+    /// or Apple Speech's OS-managed model).
+    case openSettings
 }
 
 /// One reason the app can't dictate (yet).
@@ -97,6 +100,7 @@ enum ReadinessIssue: Equatable {
         case .accessibilityNeeded, .hotkeyTapFailed: return .openAccessibilitySettings
         case .microphoneDenied, .microphoneRestricted: return .openMicrophoneSettings
         case .microphoneNotDetermined: return .requestMicrophone
+        case .modelMissing(_, .inApp?), .modelMissing(_, .instructions?): return .openSettings
         case .modelMissing, .modelFailed: return .openModelsFolder
         case .hotkeysStarting, .modelVerifying, .modelLoading, .modelPreparing: return nil
         }

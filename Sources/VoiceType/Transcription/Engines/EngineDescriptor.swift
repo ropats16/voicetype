@@ -167,6 +167,10 @@ struct EngineModelOption: Hashable, Identifiable {
 enum ModelDownloadHint: Equatable {
     /// A command to run in the repo, e.g. `make model MODEL=small.en-q5_1`.
     case command(String)
+    /// Settings' Download button fetches it (`EngineDescriptor.inAppDownload`);
+    /// `command` fetches the same files from the repo, e.g. `make
+    /// whisperkit-model WHISPERKIT=tiny.en`.
+    case inApp(command: String)
     /// A sentence, for engines whose models aren't fetched by a command, e.g.
     /// "Open Settings › Model to download it."
     case instructions(String)

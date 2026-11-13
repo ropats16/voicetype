@@ -50,9 +50,13 @@ extension FolderModelEngine {
         return FileManager.default.fileExists(atPath: manifest.path)
     }
 
-    /// The catalog model's command; nil for a custom folder (nothing to fetch).
+    /// Settings' Download, or the catalog model's command; nil for a custom
+    /// folder (nothing to fetch).
     func downloadHint(for spec: ModelSpec) -> ModelDownloadHint? {
-        Catalog.model(forFolder: spec.path).map { .command(downloadCommand(for: $0)) }
+        Catalog.model(forFolder: spec.path).map { model in
+            let command = downloadCommand(for: model)
+            return Catalog.pinnedFiles(for: model.id).isEmpty ? .command(command) : .inApp(command: command)
+        }
     }
 
     /// A catalog model's pinned files, into the folder `resolve` gives it.

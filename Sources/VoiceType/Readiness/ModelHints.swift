@@ -11,8 +11,11 @@ struct ModelNotice: Equatable {
 /// (`ReadinessIssue.detail`) and the notice posted when the engine reports a
 /// missing or broken model. How to get the model comes from its engine
 /// (`EngineDescriptor.downloadHint`): a command (whisper's `make model`) is
-/// quoted to run; instructions (an engine whose models aren't files fetched
-/// by command) are shown as written, with no file path assumed.
+/// quoted to run; a model Settings downloads (WhisperKit, Parakeet) points
+/// there first, its command second; instructions (an engine whose models
+/// aren't files fetched by command) are shown as written, with no file path
+/// assumed. A model that's there but won't load isn't offered in Settings
+/// (it lists only models not downloaded), so a failure names the command.
 enum ModelHints {
     /// A Core ML model's first load on this Mac (it's being compiled), for
     /// the menu and Settings in place of "Loading".
@@ -22,6 +25,7 @@ enum ModelHints {
     static func missing(download: ModelDownloadHint?) -> String {
         switch download {
         case .command(let command)?: return "Model missing — run `\(command)`"
+        case .inApp(let command)?: return "Model missing — download it in Settings › Model (or run `\(command)`)"
         case .instructions(let text)?: return "Model missing — \(text)"
         case nil: return "Model file missing — see Settings"
         }
@@ -30,7 +34,8 @@ enum ModelHints {
     /// Menu line for a model that wouldn't load.
     static func failed(download: ModelDownloadHint?) -> String {
         switch download {
-        case .command(let command)?: return "Model failed to load — see log, or try `\(command)` to re-download it"
+        case .command(let command)?, .inApp(let command)?:
+            return "Model failed to load — see log, or try `\(command)` to re-download it"
         case .instructions, nil: return "Model failed to load — see log"
         }
     }
@@ -47,6 +52,10 @@ enum ModelHints {
             case .instructions(let text)?:
                 return ModelNotice(title: "VoiceType: model not installed", body: text,
                                    log: "Model not installed (\(engine.modelPath)). \(text)")
+            case .inApp(let command)?:
+                let fix = "Download it in Settings › Model, or run `\(command)`."
+                return ModelNotice(title: "VoiceType: model not downloaded", body: fix,
+                                   log: "Model not downloaded (\(engine.modelPath)). \(fix)")
             case .command, nil:
                 let fix = command(engine.download).map { " Run `\($0)` to download it." } ?? ""
                 return ModelNotice(title: "VoiceType: model not found",
@@ -57,6 +66,8 @@ enum ModelHints {
             let fix: String
             switch redownload(engine) {
             case .command(let command)?: fix = " Try `\(command)` to re-download it."
+            case .inApp(let command)?:
+                fix = " Try `\(command)` to re-download it, or delete its folder and download it again in Settings › Model."
             case .instructions(let text)?: fix = " \(text)"
             case nil: fix = ""
             }
