@@ -9,9 +9,14 @@ final class WhisperKitEngineTests: XCTestCase {
     private let engine = WhisperKitEngine()
     private let modelsDir = URL(fileURLWithPath: "/tmp/vt/models")
 
-    private func context(_ language: String = "en", modelsDir: URL? = nil) -> ModelContext {
-        ModelContext(language: language, hardware: HardwareProfile(isAppleSilicon: true, memoryBytes: 8 << 30),
+    private func context(_ language: String = "en", modelsDir: URL? = nil, memoryGiB: UInt64 = 8) -> ModelContext {
+        ModelContext(language: language, hardware: HardwareProfile(isAppleSilicon: true, memoryBytes: memoryGiB << 30),
                      modelsDir: modelsDir ?? self.modelsDir, presentFilenames: [])
+    }
+
+    private func automaticID(_ language: String, memoryGiB: UInt64) -> String {
+        URL(fileURLWithPath: engine.resolve(.automatic, in: context(language, memoryGiB: memoryGiB)).path)
+            .lastPathComponent
     }
 
     func testIsRegistered() {
@@ -30,12 +35,17 @@ final class WhisperKitEngineTests: XCTestCase {
                                  language: "en", engine: .whisperKit))
     }
 
-    func testAutomaticIsEnglishOnlyForEnglishElseMultilingual() {
-        XCTAssertEqual(URL(fileURLWithPath: engine.resolve(.automatic, in: context("en")).path).lastPathComponent,
-                       "small.en_217MB")
+    /// English gets the compressed small.en on every Mac; other languages
+    /// and auto-detect a multilingual model sized to the RAM: small on an
+    /// 8 GB Mac (first-class per the PRD), large-v3-turbo 626 MB above that.
+    func testAutomaticFollowsLanguageAndRAM() {
+        for memory: UInt64 in [8, 16, 64] {
+            XCTAssertEqual(automaticID("en", memoryGiB: memory), "small.en_217MB", "\(memory) GB")
+        }
         for language in ["de", ModelSpec.autoDetect] {
-            let id = URL(fileURLWithPath: engine.resolve(.automatic, in: context(language)).path).lastPathComponent
-            XCTAssertFalse(try XCTUnwrap(WhisperKitCatalog.model(id: id)).isEnglishOnly, language)
+            XCTAssertEqual(automaticID(language, memoryGiB: 8), "small", language)
+            XCTAssertEqual(automaticID(language, memoryGiB: 16), "large-v3-v20240930_626MB", language)
+            XCTAssertEqual(automaticID(language, memoryGiB: 64), "large-v3-v20240930_626MB", language)
         }
     }
 

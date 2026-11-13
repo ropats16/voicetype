@@ -15,7 +15,7 @@ struct WhisperKitEngine: FolderModelEngine {
     }
 
     func automaticModel(in context: ModelContext) -> WhisperKitModel {
-        WhisperKitCatalog.defaultModel(language: context.language)
+        WhisperKitCatalog.defaultModel(language: context.language, hardware: context.hardware)
     }
 
     func downloadCommand(for model: WhisperKitModel) -> String {

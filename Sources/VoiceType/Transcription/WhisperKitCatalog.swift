@@ -55,10 +55,16 @@ enum WhisperKitCatalog: FolderModelCatalog {
                         manifestSHA256: "e9d304611180d0e8cb353710b5426afce980427aec0f3b054a2002249e0561a6"),
     ]
 
-    /// The Automatic pick: the compressed small.en for English (a dictation-
-    /// speed model, 220 MB); the compressed large-v3-turbo for any other
-    /// language or auto-detect, where small multilingual models are weak.
-    static func defaultModel(language: String) -> WhisperKitModel {
-        model(id: ModelCatalog.isEnglish(language) ? "small.en_217MB" : "large-v3-v20240930_626MB")!
+    /// The Automatic pick. English: the compressed small.en (a dictation-
+    /// speed model, 220 MB) on every Mac; 3.5% long-form WER, near the large
+    /// model's, at half its latency (`plans/benchmark.md`). Any other
+    /// language or auto-detect needs a multilingual model, where small ones
+    /// are weaker: the compressed large-v3-turbo (626 MB) when there's RAM to
+    /// spare, else small (489 MB), so an 8 GB Mac — first-class, like
+    /// whisper's RAM-based pick — keeps headroom and skips the minute-long
+    /// first compile.
+    static func defaultModel(language: String, hardware: HardwareProfile) -> WhisperKitModel {
+        if ModelCatalog.isEnglish(language) { return model(id: "small.en_217MB")! }
+        return model(id: hardware.memoryGiB <= 8 ? "small" : "large-v3-v20240930_626MB")!
     }
 }

@@ -52,6 +52,6 @@ final class WhisperKitCatalogTests: XCTestCase {
     /// English.
     func testScriptDefaultIsTheEnglishAutomaticPick() throws {
         XCTAssertEqual(try FolderModelTable.scriptDefault("download_whisperkit_model.sh"),
-                       WhisperKitCatalog.defaultModel(language: "en").id)
+                       WhisperKitCatalog.defaultModel(language: "en", hardware: .current).id)
     }
 }
