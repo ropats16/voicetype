@@ -472,3 +472,25 @@ it's deterministic but drops whole windows, 15.8%). Larger models rarely fall
 back. (4) VAD chunking made the 623 s clip ~3× faster (tiny.en 9.9 s → 3.3 s)
 with no WER cost; it doesn't apply to ≤ 30 s clips. (5) `phys_footprint`
 doesn't count Neural Engine memory, so peaks understate the real cost.
+
+## Apple Speech (#14) — results
+
+Run 2026-11-13, same Mac and fixtures (M3 Max, macOS 26.7.2, release),
+`--engine apple-speech --language en` (SpeechAnalyzer + SpeechTranscriber,
+English model installed by macOS). Short clips: 8 clips × 3 runs. Single
+uncooled run — indicative.
+
+| engine / model | load | short p50 | short p90 | long (623 s) | long RTF | peak mem | short WER | long WER |
+|---|---|---|---|---|---|---|---|---|
+| apple-speech / en (OS model) | 0.20 s | 118 ms | 144 ms | 11.2 s | 0.018 (56×) | n/a (see notes) | 2.4% (3/127) | 2.2% |
+| parakeet / tdt-0.6b-v3 (above) | 0.19 s | 63 ms | 75 ms | — | 0.0035 (290×) | 169 MiB | 0.8% (1/127) | 2.39% |
+| whisper / medium.en (above) | 0.67 s | 290 ms | 323 ms | — | 0.0311 (32×) | 2,096 MiB | 3.1% (4/127) | 3.19% |
+
+**Apple Speech notes.** (1) There's no model file: "load" is setting up the
+analyzer for the locale's OS-installed model, hence ~0.2 s with no first-load
+compile. (2) RAM isn't measured in-process: the model runs in the
+`localspeechrecognition` XPC process (~166 MiB RSS during the run), so the
+bench's `phys_footprint` of VoiceType itself says nothing about the engine's
+cost. (3) Accuracy is near Parakeet's and better than whisper medium.en on
+these fixtures, at ~2× Parakeet's short-clip latency; it needs macOS 26 and
+covers fewer languages (see `AppleSpeechEngine.supportedLanguages`).

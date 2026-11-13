@@ -254,7 +254,7 @@ logs the problem at startup and the menu shows a **Config issue** warning.
 
 | Setting               | What it does                                        |
 |-----------------------|-----------------------------------------------------|
-| `engine`              | Speech engine: `whisper` (default). If it can't run on this Mac or in the chosen language, VoiceType uses whisper and says why (the setting is kept). |
+| `engine`              | Speech engine: `whisper` (default, whisper.cpp, any Mac); `whisperkit` (Core ML, Apple Silicon; models via `make whisperkit-model WHISPERKIT=<id>`); `parakeet` ("Turbo": Apple Silicon, English + 24 EU languages, picked explicitly, not under auto-detect; model via `make parakeet-model`); `apple-speech` (macOS 26; models managed by macOS, downloaded from Settings). If it can't run on this Mac or in the chosen language, VoiceType uses whisper and says why (the setting is kept). |
 | `model`               | whisper's model: `auto` (default: pick for this Mac) or a model id, e.g. `small.en-q5_1`. |
 | `modelPath`           | A specific whisper model `.bin` file; overrides `model` when set (default empty). |
 | `engineModels`        | Other engines' model picks by engine id, e.g. `{"whisperkit": "auto"}` (unset = `auto`). |

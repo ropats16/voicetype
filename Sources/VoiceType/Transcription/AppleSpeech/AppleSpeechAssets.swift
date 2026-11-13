@@ -5,18 +5,16 @@ import Speech
 /// no model file: macOS downloads, stores and updates the model, and this is
 /// what the app shows in place of a file's presence.
 ///
-/// Proposed mapping onto `TranscriptionStatus` for the engine registry
-/// (phase 2; the engine itself is unchanged):
-/// - `.installed` → the presence check passes; `load()` goes `.loading` →
-///   `.ready` as for a file.
-/// - `.notInstalled` → `.missing`, with "Download in Settings" (the Settings
-///   button calls `AppleSpeechAssets.install`), as for a missing model file.
-/// - `.downloading` → `.missing` too, the Settings row showing the progress;
-///   when the install finishes, the registry reloads (`switchModel`/`load`).
+/// How it maps onto `TranscriptionStatus` (`AppleSpeechEngine.isPresent`):
+/// - `.installed` → present; `load()` goes `.loading` → `.ready` as for a file.
+/// - `.notInstalled` → `.missing`, with the engine's "Open Settings › Model"
+///   hint; Settings' Download button calls `AppleSpeechAssets.install`.
+/// - `.downloading` → `.missing` too, Settings showing the progress; when the
+///   install finishes (from Settings or elsewhere) the engine loads it.
 ///   (Not `.loading`: that means "a job submitted now waits for it", and a
 ///   download can take minutes or fail.)
-/// - `.unsupported` → the engine isn't offered for that language; if already
-///   selected, `.failed(reason:)` with `AppleSpeechError.unsupportedLanguage`.
+/// - `.unsupported` → present, so the load runs and fails (`.failed`) with
+///   `AppleSpeechError.unsupportedLanguage`; Settings shows "Not available".
 enum AppleSpeechAssetState: Equatable {
     /// This Mac can't transcribe that language with SpeechTranscriber.
     case unsupported
