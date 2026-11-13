@@ -9,6 +9,7 @@ struct EngineRegistry {
     /// (see `WhisperEngine`) and add one line here. Order is Settings' order.
     static let shared = EngineRegistry([
         WhisperEngine(),
+        WhisperKitEngine(),
         ParakeetEngine(),
         AppleSpeechEngine(),
     ])

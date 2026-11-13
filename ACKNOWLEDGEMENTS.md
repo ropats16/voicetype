@@ -31,6 +31,23 @@ or at the linked URL.
   Model weights, converted to ggml format and published at
   https://huggingface.co/ggerganov/whisper.cpp; downloaded on demand.
 
+## WhisperKit (Core ML)
+
+- **WhisperKit** (argmax-oss-swift) — Argmax, Inc. MIT License (MIT).
+  https://github.com/argmaxinc/argmax-oss-swift
+  Runs Whisper on Core ML (Neural Engine); its WhisperKit library is linked
+  into the app.
+- **swift-transformers** (portions, in WhisperKit's `ArgmaxCore/External`) —
+  Hugging Face SAS. Apache License 2.0 (Apache-2.0).
+  https://github.com/huggingface/swift-transformers
+  Hub and tokenizer code, modified by Argmax; linked in through WhisperKit.
+- **Whisper models (Core ML)** — OpenAI. MIT License (MIT).
+  https://github.com/openai/whisper
+  Converted to Core ML by Argmax and published (MIT) at
+  https://huggingface.co/argmaxinc/whisperkit-coreml, with OpenAI's tokenizer
+  files from https://huggingface.co/openai; downloaded on demand by
+  `make whisperkit-model`.
+
 ## Turbo (English/EU)
 
 - **Parakeet TDT 0.6B v3** — NVIDIA. Creative Commons Attribution 4.0

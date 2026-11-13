@@ -31,7 +31,7 @@ final class WhisperKitCatalogTests: XCTestCase {
         XCTAssertNil(WhisperKitCatalog.model(forFolder: "/elsewhere/my-finetune"))
 
         XCTAssertEqual(WhisperKitCatalog.spec(for: tiny, language: "en"),
-                       ModelSpec(path: folder.path, sha256: tiny.manifestSHA256, language: "en"))
+                       ModelSpec(path: folder.path, sha256: tiny.manifestSHA256, language: "en", engine: .whisperKit))
     }
 
     // MARK: - Script parity

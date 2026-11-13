@@ -4,7 +4,7 @@ import Foundation
 /// plus the matching OpenAI tokenizer, pinned file by file.
 struct WhisperKitModel: Hashable, Identifiable {
     /// The local folder name: the Hugging Face folder minus `openai_whisper-`,
-    /// e.g. `small.en_217MB`. What `make model ENGINE=whisperkit MODEL=` takes.
+    /// e.g. `small.en_217MB`. What `make whisperkit-model WHISPERKIT=` takes.
     let id: String
     /// What the user sees, e.g. `large-v3-turbo` for `large-v3-v20240930`.
     let name: String
@@ -64,19 +64,31 @@ enum WhisperKitCatalog {
         return model(id: URL(fileURLWithPath: path).lastPathComponent)
     }
 
-    /// `.../VoiceType/models/whisperkit/`, beside the whisper.cpp files.
-    static var modelsDir: URL {
-        Paths.modelsDir.appendingPathComponent("whisperkit", isDirectory: true)
+    /// The Automatic pick: the compressed small.en for English (a dictation-
+    /// speed model, 220 MB); the compressed large-v3-turbo for any other
+    /// language or auto-detect, where small multilingual models are weak.
+    static func defaultModel(language: String) -> WhisperKitModel {
+        model(id: ModelCatalog.isEnglish(language) ? "small.en_217MB" : "large-v3-v20240930_626MB")!
     }
 
-    /// Where `model` is downloaded to: `modelsDir/<id>/`.
-    static func folder(for model: WhisperKitModel) -> URL {
-        modelsDir.appendingPathComponent(model.id, isDirectory: true)
+    /// `<models>/whisperkit/`, beside the whisper.cpp files.
+    static func directory(in modelsDir: URL = Paths.modelsDir) -> URL {
+        modelsDir.appendingPathComponent("whisperkit", isDirectory: true)
+    }
+
+    /// Where model `id` is downloaded to: `<models>/whisperkit/<id>/`.
+    static func folder(for id: String, in modelsDir: URL = Paths.modelsDir) -> URL {
+        directory(in: modelsDir).appendingPathComponent(id, isDirectory: true)
+    }
+
+    static func folder(for model: WhisperKitModel, in modelsDir: URL = Paths.modelsDir) -> URL {
+        folder(for: model.id, in: modelsDir)
     }
 
     /// What the engine loads for `model`: its folder, checked against the
     /// pinned manifest digest (the engine's `ModelVerifier` handles folders).
-    static func spec(for model: WhisperKitModel, language: String) -> ModelSpec {
-        ModelSpec(path: folder(for: model).path, sha256: model.manifestSHA256, language: language)
+    static func spec(for model: WhisperKitModel, language: String, in modelsDir: URL = Paths.modelsDir) -> ModelSpec {
+        ModelSpec(path: folder(for: model, in: modelsDir).path, sha256: model.manifestSHA256,
+                  language: language, engine: .whisperKit)
     }
 }
