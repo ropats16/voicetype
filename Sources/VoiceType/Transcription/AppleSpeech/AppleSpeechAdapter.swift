@@ -69,7 +69,7 @@ enum AppleSpeechError: LocalizedError, Equatable {
 /// Each job is one finite analysis: the clip is converted to the transcriber's
 /// format, streamed in 1 s buffers, and finalized; final results only, with per-word times.
 /// The API is async; `transcribe` blocks the engine's queue on it with a
-/// deadline (`BlockingAsync`). The model is retained for the process's
+/// deadline (`BlockingAsync.Bridge`). The model is retained for the process's
 /// lifetime once used (the engine's warm-up), and released when the adapter
 /// goes (unload, or a switch away).
 @available(macOS 26, *)
@@ -211,9 +211,13 @@ final class AppleSpeechAdapter: TranscriptionAdapter {
         return output
     }
 
-    /// `BlockingAsync.run`, its deadline reported as `AppleSpeechError.timedOut`.
+    /// Shared by every adapter: after a deadline, nothing new starts until the
+    /// abandoned analysis (or setup) has wound down.
+    private static let bridge = BlockingAsync.Bridge(name: "Apple speech recognition")
+
+    /// `bridge.run`, its deadline reported as `AppleSpeechError.timedOut`.
     private static func blocking<T>(timeout: TimeInterval, _ work: @escaping @Sendable () async throws -> T) throws -> T {
-        do { return try BlockingAsync.run(timeout: timeout, work) } catch is BlockingAsync.TimedOut {
+        do { return try bridge.run(timeout: timeout, work) } catch is BlockingAsync.TimedOut {
             throw AppleSpeechError.timedOut
         }
     }

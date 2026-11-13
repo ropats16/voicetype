@@ -22,7 +22,10 @@ extension TranscriptionEngine {
 /// protocol is sync and only ever called on the engine's serial background
 /// queue, so each call blocks that queue on a detached task
 /// (`BlockingAsync`). WhisperKit never hops to the main actor, so this can't
-/// deadlock — but it must not be called on main (asserted).
+/// deadlock — but it must not be called on main (asserted). Every load and
+/// job goes through one `bridge`: after a timeout, WhisperKit is refused until
+/// the abandoned work ends, so a pipe never runs two jobs and a timed-out
+/// load can't overlap another.
 final class WhisperKitAdapter: TranscriptionAdapter {
     /// A first load specializes the model for this Mac's Neural Engine: ~66 s
     /// for large-v3-turbo (626 MB) on an M3 Max; allow for slower Macs.
@@ -44,6 +47,8 @@ final class WhisperKitAdapter: TranscriptionAdapter {
                     modelFolder: folder.path, tokenizerFolder: folder,
                     verbose: false, logLevel: .none, load: true, download: false)))
             }
+        } catch let busy as BlockingAsync.StillBusy {
+            throw busy
         } catch {
             Log.error("WhisperKit failed to load \(folder.lastPathComponent): \(error)")
             throw TranscriptionError.modelLoadFailed(path: modelFolder)
@@ -78,6 +83,8 @@ final class WhisperKitAdapter: TranscriptionAdapter {
             results = try Self.blocking(timeout: timeout) { [pipe, options] in
                 try await pipe.value.transcribe(audioArray: samples, decodeOptions: options)
             }
+        } catch let busy as BlockingAsync.StillBusy {
+            throw busy
         } catch {
             Log.error("WhisperKit transcription failed: \(error)")
             throw TranscriptionError.inferenceFailed
@@ -111,16 +118,21 @@ final class WhisperKitAdapter: TranscriptionAdapter {
         return NonSpeechFilter.filter(spoken)
     }
 
-    /// `BlockingAsync.run`, never on main.
+    /// Shared by every WhisperKit adapter: one engine's abandoned load must
+    /// hold off the next adapter's too, or two models load at once.
+    private static let bridge = BlockingAsync.Bridge(name: "WhisperKit")
+
+    /// `bridge.run`, never on main.
     private static func blocking<T>(timeout: TimeInterval,
                                     _ work: @escaping @Sendable () async throws -> T) throws -> T {
         dispatchPrecondition(condition: .notOnQueue(.main))
-        return try BlockingAsync.run(timeout: timeout, work)
+        return try bridge.run(timeout: timeout, work)
     }
 }
 
 /// Carries a non-`Sendable` value into `BlockingAsync`'s detached task; safe
-/// here because the engine never runs two jobs on one adapter at once.
+/// here because the engine never runs two jobs on one adapter at once, and
+/// the bridge refuses a job while a timed-out one may still be running.
 private struct Unchecked<Value>: @unchecked Sendable {
     let value: Value
     init(_ value: Value) { self.value = value }
