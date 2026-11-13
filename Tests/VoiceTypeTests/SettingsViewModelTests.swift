@@ -49,6 +49,8 @@ final class SettingsViewModelTests: XCTestCase {
         tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("settings-vm-test-\(UUID().uuidString).json")
         configStore = ConfigStore(url: tempURL)
+        // The real registry: keep Automatic off whatever engines this Mac has installed.
+        configStore.update { $0.engine = "whisper" }
         fakeLogin = FakeLoginItemService()
         menuRefreshCount = 0
         reloadCount = 0

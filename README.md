@@ -183,6 +183,20 @@ Settings live in a plain text file you can open from the menu
 ~/Library/Application Support/VoiceType/config.json
 ```
 
+**Speech engine.** By default (**Automatic** in Settings, `"engine": "auto"`)
+VoiceType picks the engine from what's already downloaded — it never downloads
+anything by itself:
+
+| Mac / language | Engine |
+|---|---|
+| Apple Silicon, a Turbo language (English + 24 EU languages), Turbo's model downloaded (Settings › Model › Download, or `make parakeet-model`) | **Turbo** (Parakeet) |
+| Apple Silicon, macOS 26, no Turbo for it (not downloaded, or a language like Japanese, Chinese, Korean), Apple Speech takes the language and its model is downloaded | **Apple Speech** |
+| Auto-detect language, Intel, or anything else (incl. a model that fails to load) | **Whisper** (whisper.cpp), with its own Automatic model for your RAM |
+
+Settings' Automatic row names the engine it picked and why it isn't Turbo
+(e.g. "Automatic (Whisper — Turbo isn't downloaded)"). Pick an engine there (or
+set `engine`) to override it. Why these defaults: [`plans/bench-results/15`](plans/bench-results/15/README.md).
+
 **Switch to a different model.** By default the app picks one for your chip +
 RAM (**Automatic** in Settings). To use another, download it, then pick it in
 **Settings → Model** — it switches right away, no restart (a dictation already
@@ -257,7 +271,7 @@ logs the problem at startup and the menu shows a **Config issue** warning.
 
 | Setting               | What it does                                        |
 |-----------------------|-----------------------------------------------------|
-| `engine`              | Speech engine: `whisper` (default, whisper.cpp, any Mac); `whisperkit` (Core ML, Apple Silicon; models via Settings › Model › Download, or `make whisperkit-model WHISPERKIT=<id>`); `parakeet` ("Turbo": Apple Silicon, English + 24 EU languages, picked explicitly, not under auto-detect; model via Settings › Model › Download, or `make parakeet-model`). A Core ML model's first load on a Mac (and after a macOS update) compiles it: "Preparing model for this Mac" meanwhile; `apple-speech` (macOS 26; models managed by macOS, downloaded from Settings). If it can't run on this Mac or in the chosen language, VoiceType uses whisper and says why (the setting is kept). |
+| `engine`              | Speech engine: `auto` (default, also when the key is missing: Turbo, else Apple Speech, else whisper, among engines already downloaded — see **Speech engine** above); `whisper` (whisper.cpp, any Mac, the fallback); `whisperkit` (Core ML, Apple Silicon; models via Settings › Model › Download, or `make whisperkit-model WHISPERKIT=<id>`); `parakeet` ("Turbo": Apple Silicon, English + 24 EU languages, picked explicitly, not under auto-detect; model via Settings › Model › Download, or `make parakeet-model`). A Core ML model's first load on a Mac (and after a macOS update) compiles it: "Preparing model for this Mac" meanwhile; `apple-speech` (macOS 26; models managed by macOS, downloaded from Settings). If it can't run on this Mac or in the chosen language, VoiceType uses whisper and says why (the setting is kept). |
 | `model`               | whisper's model: `auto` (default: pick for this Mac) or a model id, e.g. `small.en-q5_1`. |
 | `modelPath`           | A specific whisper model `.bin` file; overrides `model` when set (default empty). |
 | `engineModels`        | Other engines' model picks by engine id, e.g. `{"whisperkit": "auto"}` (unset = `auto`). |

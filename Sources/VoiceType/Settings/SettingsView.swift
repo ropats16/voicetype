@@ -75,15 +75,15 @@ struct SettingsView: View {
 
             // MARK: Model
             Section {
-                // Only worth a picker once this Mac has a choice of engines.
-                if viewModel.engineChoices.count > 1 {
-                    Picker("Engine",
-                           selection: Binding(
-                               get: { viewModel.engine },
-                               set: { viewModel.selectEngine($0) }
-                           )) {
-                        ForEach(viewModel.engineChoices, id: \.self) { kind in
-                            Text(kind.displayName).tag(kind)
+                Picker("Engine",
+                       selection: Binding(
+                           get: { viewModel.engineRow },
+                           set: { viewModel.selectEngine($0) }
+                       )) {
+                    ForEach(viewModel.engineChoices, id: \.self) { choice in
+                        switch choice {
+                        case .automatic: Text(viewModel.automaticEngineLabel).tag(choice)
+                        case .engine(let kind): Text(kind.displayName).tag(choice)
                         }
                     }
                 }

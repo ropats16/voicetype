@@ -5,10 +5,12 @@ import Foundation
 /// Decoding is tolerant: any missing key falls back to its default, so a
 /// hand-edited or older config keeps working and new fields are forward-safe.
 struct Config: Codable {
-    /// The speech engine's id (`EngineKind` raw value), e.g. "whisper" or
-    /// "parakeet". Kept as written, even if unknown or unavailable here: the
-    /// app then runs whisper (see `EngineRegistry.select`) without rewriting
-    /// it, so the choice returns when it can run again.
+    /// "auto" (the default, also for configs without the key: the engine
+    /// `EnginePolicy` picks for this Mac and language) or an engine's id
+    /// (`EngineKind` raw value), e.g. "whisper" or "parakeet". Kept as
+    /// written, even if unknown or unavailable here: the app then runs whisper
+    /// (see `EngineRegistry.select`) without rewriting it, so the choice
+    /// returns when it can run again. Read it through `engineChoice`.
     var engine: String
     /// whisper's model: "auto" (pick by chip + RAM) or a model id, e.g.
     /// "small.en-q5_1". Other engines' picks are in `engineModels`.
@@ -53,7 +55,7 @@ struct Config: Codable {
         )
     }
 
-    init(engine: String = EngineKind.whisper.rawValue, model: ModelChoice = .automatic, modelPath: String,
+    init(engine: String = EngineChoice.automaticID, model: ModelChoice = .automatic, modelPath: String,
          engineModels: [String: ModelChoice] = [:], hold: KeyBinding, toggle: KeyBinding, cancelKeyCode: Int,
          maxRecordingSeconds: Double, trailingSpace: Bool, microphoneUID: String?,
          soundCues: Bool, language: String, threads: Int, keepMicWarm: Bool,
@@ -97,6 +99,10 @@ struct Config: Codable {
         modelIdleMinutes = try c.decodeIfPresent(Double.self, forKey: .modelIdleMinutes) ?? d.modelIdleMinutes
     }
 
+    /// `engine` parsed: Automatic, a known engine, or nil for an id this
+    /// build doesn't know (it runs whisper; see `ConfigValidator`).
+    var engineChoice: EngineChoice? { EngineChoice(id: engine) }
+
     /// `engine`'s model pick: `model` for whisper, else its `engineModels`
     /// entry (Automatic if unset).
     func modelChoice(for engine: EngineKind) -> ModelChoice {
@@ -117,6 +123,34 @@ struct Config: Codable {
             modelPath = ""
         } else {
             engineModels[engine.rawValue] = choice
+        }
+    }
+}
+
+/// `config.json`'s `engine`: Automatic (`EnginePolicy`) or one engine.
+enum EngineChoice: Hashable {
+    case automatic
+    case engine(EngineKind)
+
+    /// The `engine` value meaning Automatic.
+    static let automaticID = "auto"
+
+    /// nil for an id that isn't "auto" or a known engine.
+    init?(id: String) {
+        if id == Self.automaticID {
+            self = .automatic
+        } else if let kind = EngineKind(rawValue: id) {
+            self = .engine(kind)
+        } else {
+            return nil
+        }
+    }
+
+    /// What `config.json` stores.
+    var id: String {
+        switch self {
+        case .automatic: return Self.automaticID
+        case .engine(let kind): return kind.rawValue
         }
     }
 }

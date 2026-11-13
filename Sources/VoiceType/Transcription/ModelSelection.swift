@@ -39,6 +39,16 @@ extension ModelSpec {
     }
 }
 
+/// What Automatic (`EnginePolicy`) needs to know beyond the models folder.
+struct EngineFacts {
+    /// Whether `spec`'s model is installed. In the app it must not block:
+    /// Apple Speech is answered from the last asset query
+    /// (`SpeechModelPresence`), the rest by their own `isPresent` (a stat).
+    var isPresent: (ModelSpec) -> Bool
+    /// Engines whose model failed to load this session: Automatic skips them.
+    var failed: Set<EngineKind> = []
+}
+
 /// Turns the user's model settings into what the engine loads, and decides
 /// whether the model stays resident. Pure: hardware and the models folder's
 /// contents are injected.
@@ -77,12 +87,16 @@ enum ModelSelection {
     }
 
     /// What the app runs for a config: the engine it names if that can run
-    /// here (else whisper), and that engine's pick resolved to a `ModelSpec`.
+    /// here (else whisper), or Automatic's pick, and that engine's pick
+    /// resolved to a `ModelSpec`.
     struct Selected: Equatable {
         let spec: ModelSpec
-        /// Why the configured engine isn't the one running (completes "Using
-        /// Whisper because …"); nil when it is.
+        /// Why the configured engine isn't the one running, or under
+        /// Automatic why it isn't Turbo (completes "Using Whisper because
+        /// …"); nil when it is.
         let fallbackReason: String?
+        /// The config's `engine` is "auto" (`EnginePolicy` picked `spec.engine`).
+        var isAutomatic = false
 
         /// "Using Whisper (whisper.cpp) because …", for Settings and the log.
         var note: String? {
@@ -91,19 +105,34 @@ enum ModelSelection {
     }
 
     /// The app's config → the engine and model to load. The engine comes from
-    /// `EngineRegistry.select` (configured engine, or whisper with a reason);
-    /// its descriptor resolves the pick (`Config.modelChoice(for:)`). Pure:
-    /// the Mac, the registry and the models folder's contents are injected.
+    /// `EngineRegistry.select` (configured engine, or whisper with a reason),
+    /// or for "auto" from `EnginePolicy` (only engines whose model `facts`
+    /// says is installed; default: each engine's own `isPresent`, which may
+    /// block for Apple Speech — the app passes non-blocking facts). Its
+    /// descriptor resolves the pick (`Config.modelChoice(for:)`). Pure: the
+    /// Mac, the registry and the models folder's contents are injected.
     static func select(_ config: Config, environment: EngineEnvironment = .current,
                        engines: EngineRegistry = .shared, modelsDir: URL = Paths.modelsDir,
-                       presentFilenames: Set<String>) -> Selected {
-        let engine = engines.select(engineID: config.engine, language: config.language, in: environment)
-        let descriptor = engines.descriptor(for: engine.kind) ?? engines.whisper
-        let context = ModelContext(language: config.language, hardware: environment.hardware, modelsDir: modelsDir,
-                                   presentFilenames: presentFilenames,
-                                   customPath: config.customModelPath(for: descriptor.kind))
-        return Selected(spec: descriptor.resolve(config.modelChoice(for: descriptor.kind), in: context),
-                        fallbackReason: engine.fallbackReason)
+                       presentFilenames: Set<String>, facts: EngineFacts? = nil) -> Selected {
+        func spec(_ descriptor: any EngineDescriptor) -> ModelSpec {
+            let context = ModelContext(language: config.language, hardware: environment.hardware,
+                                       modelsDir: modelsDir, presentFilenames: presentFilenames,
+                                       customPath: config.customModelPath(for: descriptor.kind))
+            return descriptor.resolve(config.modelChoice(for: descriptor.kind), in: context)
+        }
+
+        guard config.engineChoice == .automatic else {
+            let engine = engines.select(engineID: config.engine, language: config.language, in: environment)
+            return Selected(spec: spec(engines.descriptor(for: engine.kind) ?? engines.whisper),
+                            fallbackReason: engine.fallbackReason)
+        }
+        let facts = facts ?? EngineFacts(isPresent: engines.isPresent)
+        let pick = EnginePolicy.automatic(
+            language: config.language, environment: environment,
+            isInstalled: { kind in engines.descriptor(for: kind).map { facts.isPresent(spec($0)) } ?? false },
+            failed: facts.failed, engines: engines)
+        return Selected(spec: spec(engines.descriptor(for: pick.kind) ?? engines.whisper),
+                        fallbackReason: pick.reason, isAutomatic: true)
     }
 
     /// `select(...).spec` on this Mac's OS with `hardware`.

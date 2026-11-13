@@ -33,7 +33,9 @@ final class ConfigTests: XCTestCase {
         let old = "/Users/me/Library/Application Support/VoiceType/models/ggml-medium.en.bin"
         let c = try decode(#"{"modelPath": "\#(old)", "language": "en", "threads": 0}"#)
         XCTAssertEqual(c.modelPath, old)
-        let spec = ModelSelection.resolve(c, hardware: HardwareProfile(isAppleSilicon: true, memoryBytes: 8 << 30),
+        XCTAssertEqual(c.engineChoice, .automatic, "No engine key: Automatic")
+        // Whenever whisper runs (always on Intel), the file beats its auto-pick.
+        let spec = ModelSelection.resolve(c, hardware: HardwareProfile(isAppleSilicon: false, memoryBytes: 8 << 30),
                                           presentFilenames: [])
         XCTAssertEqual(spec.path, old, "An explicit file beats the auto-pick")
     }

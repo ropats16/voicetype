@@ -30,6 +30,7 @@ final class SettingsEngineTests: XCTestCase {
             .appendingPathComponent("settings-engine-test-\(UUID().uuidString).json")
         configStore = ConfigStore(url: tempURL)
         applied = 0
+        facts = nil
     }
 
     override func tearDown() {
@@ -37,9 +38,12 @@ final class SettingsEngineTests: XCTestCase {
         super.tearDown()
     }
 
+    /// What the app would pass for Automatic; nil = each engine's own `isPresent`.
+    private var facts: EngineFacts?
+
     private func resolve() -> ModelSpec {
         ModelSelection.select(configStore.config, environment: environment, engines: engines,
-                              presentFilenames: ["ggml-small.en-q5_1.bin"]).spec
+                              presentFilenames: ["ggml-small.en-q5_1.bin"], facts: facts).spec
     }
 
     private func makeVM() -> SettingsViewModel {
@@ -61,23 +65,74 @@ final class SettingsEngineTests: XCTestCase {
                 self.engineModel = self.resolve()
             },
             engines: engines,
-            environment: environment
+            environment: environment,
+            engineFacts: { [unowned self] in self.facts }
         )
     }
 
-    func testAFreshConfigRunsWhisperAndOffersEveryEngineForTheLanguage() {
+    func testAFreshConfigIsAutomaticAndOffersEveryEngineForTheLanguage() {
+        let vm = makeVM()
+        XCTAssertEqual(vm.engineRow, .automatic)
+        XCTAssertEqual(vm.engine, .parakeet, "Turbo's model is installed")
+        XCTAssertEqual(vm.engineChoices, [.automatic, .engine(.whisper), .engine(.parakeet)])
+        XCTAssertEqual(vm.automaticEngineLabel, "Automatic (Turbo)")
+        XCTAssertNil(vm.engineNote, "The Automatic row says it all")
+    }
+
+    func testAutomaticSaysWhyItIsntTurbo() {
+        engines = EngineRegistry([WhisperEngine(), FakeEngine(present: [])])
         let vm = makeVM()
         XCTAssertEqual(vm.engine, .whisper)
-        XCTAssertEqual(vm.engineChoices, [.whisper, .parakeet])
+        XCTAssertEqual(vm.automaticEngineLabel, "Automatic (Whisper — Turbo isn't downloaded)")
+        XCTAssertEqual(vm.modelRow, .automatic, "whisper's own pick")
         XCTAssertNil(vm.engineNote)
+
+        vm.setLanguage("ja")
+        XCTAssertEqual(vm.automaticEngineLabel, "Automatic (Whisper — Turbo doesn't support Japanese)")
+    }
+
+    func testAutomaticAsksTheInjectedFactsAboutInstalledModels() {
+        // The app answers Apple Speech from a cache and remembers failed loads.
+        facts = EngineFacts(isPresent: { _ in true }, failed: [.parakeet])
+        let vm = makeVM()
+        XCTAssertEqual(vm.engine, .whisper)
+        XCTAssertEqual(vm.automaticEngineLabel, "Automatic (Whisper — Turbo failed to load)")
+    }
+
+    func testAutomaticsPickIsReReadWhenTheEngineReports() {
+        // The app re-picks on its own (a failed load, Apple Speech's model
+        // turning up); Settings follows on the next status.
+        let vm = makeVM()
+        XCTAssertEqual(vm.engine, .parakeet)
+
+        facts = EngineFacts(isPresent: { _ in true }, failed: [.parakeet])
+        vm.modelStatusChanged(.loading)
+
+        XCTAssertEqual(vm.engine, .whisper)
+        XCTAssertEqual(vm.engineRow, .automatic)
+    }
+
+    func testPickingAutomaticBackSavesAuto() {
+        configStore.update { $0.engine = "whisper" }
+        let vm = makeVM()
+        XCTAssertEqual(vm.engineRow, .engine(.whisper))
+
+        vm.selectEngine(.automatic)
+
+        XCTAssertEqual(configStore.config.engine, "auto")
+        XCTAssertEqual(vm.engineRow, .automatic)
+        XCTAssertEqual(vm.engine, .parakeet)
+        XCTAssertEqual(engineModel.engine, .parakeet)
+        XCTAssertEqual(applied, 1)
     }
 
     func testPickingAnEngineSavesItAndSwitchesLiveToItsModel() {
         let vm = makeVM()
 
-        vm.selectEngine(.parakeet)
+        vm.selectEngine(.engine(.parakeet))
 
         XCTAssertEqual(configStore.config.engine, "parakeet")
+        XCTAssertEqual(vm.engineRow, .engine(.parakeet))
         XCTAssertEqual(vm.engine, .parakeet)
         XCTAssertEqual(applied, 1)
         XCTAssertEqual(engineModel, ModelSpec(path: fakePath("fast"), sha256: nil, language: "en", engine: .parakeet))
@@ -101,7 +156,7 @@ final class SettingsEngineTests: XCTestCase {
         XCTAssertEqual(vm.modelRow, .catalog("fast"))
         XCTAssertEqual(applied, 1)
 
-        vm.selectEngine(.whisper)
+        vm.selectEngine(.engine(.whisper))
         XCTAssertEqual(vm.modelRow, .automatic, "whisper shows its own pick")
         XCTAssertEqual(engineModel.engine, .whisper)
     }
@@ -113,7 +168,7 @@ final class SettingsEngineTests: XCTestCase {
 
         vm.setLanguage("ja")
         XCTAssertEqual(vm.engine, .whisper)
-        XCTAssertEqual(vm.engineChoices, [.whisper], "Turbo is hidden for Japanese")
+        XCTAssertEqual(vm.engineChoices, [.automatic, .engine(.whisper)], "Turbo is hidden for Japanese")
         XCTAssertEqual(vm.engineNote, "Using Whisper (whisper.cpp) because Turbo (English/EU) doesn't support Japanese.")
         XCTAssertEqual(configStore.config.engine, "parakeet", "The choice is kept, not rewritten")
         XCTAssertEqual(engineModel.engine, .whisper)
@@ -135,6 +190,7 @@ final class SettingsEngineTests: XCTestCase {
     /// with the engine's own command: the model's when one is missing, a
     /// `<name>` placeholder when several are.
     func testTheNotDownloadedHeadingUsesTheEnginesDownloadCommand() {
+        configStore.update { $0.engine = "whisper" }
         XCTAssertEqual(makeVM().notDownloadedHeading, "Not downloaded — run: make model MODEL=<name>")
 
         configStore.update { $0.engine = "parakeet" }

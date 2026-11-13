@@ -165,8 +165,7 @@ extension SettingsViewModel {
     private func modelDownloadFinished(_ key: ModelDownloadKey, at folder: URL) {
         modelDownloads[key] = nil
         objectWillChange.send()   // the model lists are read from disk
-        let selected = ModelSelection.select(configStore.config, environment: environment, engines: engines, modelsDir: modelsDir,
-                                             presentFilenames: presentModelFilenames()).spec
+        let selected = selection(configStore.config).spec   // under Automatic, a Turbo download is its new pick
         guard URL(fileURLWithPath: selected.path).standardizedFileURL == folder.standardizedFileURL else { return }
         modelSwitchError = nil
         onModelSettingsChange()

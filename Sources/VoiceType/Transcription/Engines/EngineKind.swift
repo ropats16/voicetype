@@ -26,4 +26,15 @@ enum EngineKind: String, CaseIterable, Codable, Hashable {
         case .appleSpeech: return "Apple Speech"
         }
     }
+
+    /// A short name for tight spots: "Turbo isn't downloaded", Settings'
+    /// "Automatic (Turbo)".
+    var shortName: String {
+        switch self {
+        case .whisper: return "Whisper"
+        case .whisperKit: return "WhisperKit"
+        case .parakeet: return "Turbo"
+        case .appleSpeech: return "Apple Speech"
+        }
+    }
 }

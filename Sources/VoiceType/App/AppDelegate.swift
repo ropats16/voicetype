@@ -26,6 +26,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         reload: { [weak self] in self?.applyModelSettings() }
     )
     private var appleSpeechTimer: Timer?
+    /// Apple Speech's model state per language, for Automatic: asked in the
+    /// background, read on main (`engineFacts`).
+    private let speechPresence = SpeechModelPresence()
+    /// Engines whose model failed to load under Automatic: it skips them until
+    /// a Settings change (which retries).
+    private var failedAutomaticEngines: Set<EngineKind> = []
+    /// What `resolvedModel()` last handed the engine, to know which engine a
+    /// `.failed` was about.
+    private var requestedModel: ModelSpec?
     /// The last engine-fallback note logged, so a re-resolve doesn't repeat it.
     private var loggedFallback: String?
     /// Mic capture. The mic and max duration are read live, so a Settings change
@@ -164,17 +173,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startEngine() {
         engine.onStatusChange = { [weak self] status in self?.engineStatusChanged(status) }
         Log.info("Engine: \(engine.model.engine.displayName). Model: \(engine.model.path) (language \(engine.model.language)); whisper auto-pick for this Mac: \(ModelCatalog.recommended(for: .current).id).")
-        engine.load()
+        if automaticAsksAppleSpeech, !speechPresence.isKnown(language: configStore.config.language) {
+            // Automatic may pick Apple Speech: learn whether its model is
+            // installed before loading anything, so launch loads one model.
+            speechPresence.refresh(language: configStore.config.language) { [weak self] _ in
+                guard let self else { return }
+                engine.switchModel(to: resolvedModel())   // before load(): just what it loads
+                engine.load()
+            }
+        } else {
+            engine.load()
+        }
         appleSpeechTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             self?.appleSpeechWatch.check()
         }
     }
 
     private func resolvedModel() -> ModelSpec {
-        let selected = ModelSelection.select(configStore.config, presentFilenames: ModelSelection.presentFilenames())
+        let selected = ModelSelection.select(configStore.config, presentFilenames: ModelSelection.presentFilenames(),
+                                             facts: engineFacts)
         if selected.note != loggedFallback, let note = selected.note { Log.info(note) }
         loggedFallback = selected.note
+        requestedModel = selected.spec
         return selected.spec
+    }
+
+    /// What Automatic knows, without blocking main: Apple Speech from
+    /// `speechPresence`, other engines' model folders by their own check.
+    private var engineFacts: EngineFacts {
+        EngineFacts(isPresent: { [speechPresence] spec in
+            spec.engine == .appleSpeech ? speechPresence.isInstalled(language: spec.language)
+                : EngineRegistry.shared.isPresent(spec)
+        }, failed: failedAutomaticEngines)
+    }
+
+    /// Automatic could pick Apple Speech here, so its model state matters.
+    private var automaticAsksAppleSpeech: Bool {
+        let config = configStore.config
+        return config.engineChoice == .automatic && config.language != ModelSpec.autoDetect
+            && EngineRegistry.shared.available(in: .current, language: config.language).contains(.appleSpeech)
     }
 
     private func idleUnloadAfter() -> TimeInterval? {
@@ -185,14 +222,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Settings changed the model, language or keep-warm: switch live. Jobs
     /// already submitted finish on the current model.
+    /// Under Automatic, Apple Speech's model state is re-asked first when it
+    /// isn't known for the language (so a language change loads one model),
+    /// else afterwards, switching again only if the answer changed.
     private func applyModelSettings() {
         engine.setIdleUnload(after: idleUnloadAfter())
-        engine.switchModel(to: resolvedModel())
+        guard automaticAsksAppleSpeech else { engine.switchModel(to: resolvedModel()); return }
+        let language = configStore.config.language
+        let known = speechPresence.isKnown(language: language)
+        if known { engine.switchModel(to: resolvedModel()) }
+        speechPresence.refresh(language: language) { [weak self] changed in
+            guard let self, !known || changed else { return }
+            engine.switchModel(to: resolvedModel())
+        }
     }
 
-    /// Called on main with each status the engine reports.
+    /// Called on main with each status the engine reports. Under Automatic a
+    /// model that fails to load is skipped: the next engine's is loaded.
     private func engineStatusChanged(_ status: TranscriptionStatus) {
         if status == .ready { loadHistory.recordLoad(engine.model) }
+        if case .failed = status, configStore.config.engineChoice == .automatic,
+           let failed = requestedModel?.engine, failed != .whisper, !failedAutomaticEngines.contains(failed) {
+            failedAutomaticEngines.insert(failed)
+            Log.info("Automatic: \(failed.shortName) failed to load; picking another engine.")
+            engine.switchModel(to: resolvedModel())
+        }
         MainActor.assumeIsolated { settingsViewModel?.modelStatusChanged(status) }
         let readiness = EngineReadiness(engine, history: loadHistory)
         if let notice = ModelHints.notice(for: status, engine: readiness) {
@@ -273,8 +327,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     hardware: .current,
                     currentModel: { [engine] in engine.model },
                     modelStatus: engine.status,
-                    onModelSettingsChange: { [weak self] in self?.applyModelSettings() },
-                    isFirstLoad: { [loadHistory] in EngineRegistry.shared.isFirstLoad($0, history: loadHistory) }
+                    onModelSettingsChange: { [weak self] in
+                        self?.failedAutomaticEngines = []   // a settings change retries them
+                        self?.applyModelSettings()
+                    },
+                    isFirstLoad: { [loadHistory] in EngineRegistry.shared.isFirstLoad($0, history: loadHistory) },
+                    engineFacts: { [weak self] in self?.engineFacts }
                 )
                 settingsViewModel = vm
                 settingsWindowController = SettingsWindowController(viewModel: vm)

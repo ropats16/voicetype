@@ -65,8 +65,9 @@ enum ConfigValidator {
 
         // warning — an engine that's unknown, not in this build, or can't run
         // on this Mac. Not a language mismatch: that's a Settings choice, and
-        // Settings explains that fallback itself.
-        if case .unavailable(let reason) = engines.availability(ofID: config.engine, in: environment) {
+        // Settings explains that fallback itself. "auto" always runs.
+        if config.engineChoice != .automatic,
+           case .unavailable(let reason) = engines.availability(ofID: config.engine, in: environment) {
             issues.append(ConfigIssue(
                 severity: .warning,
                 message: "`engine` \"\(config.engine)\": \(reason); using \(EngineKind.whisper.displayName)."))

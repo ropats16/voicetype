@@ -47,6 +47,9 @@ final class SettingsViewModel: ObservableObject {
     /// Where models are resolved and downloaded (`Paths.modelsDir`;
     /// injectable so tests never touch the real one).
     let modelsDir: URL
+    /// What Automatic knows without blocking (Apple Speech's cached asset
+    /// state, failed loads); nil = each engine's own `isPresent`.
+    let engineFacts: () -> EngineFacts?
 
     // MARK: - Published display state
 
@@ -60,8 +63,12 @@ final class SettingsViewModel: ObservableObject {
     // MARK: - Model display state
 
     // Intents and derived values: SettingsViewModel+Model.swift.
-    /// The engine the config selects here: the configured one, or whisper
-    /// when it can't run (`engineNote` says why). The model rows are its.
+    /// The engine picker's row: Automatic, or the engine that runs (the
+    /// configured one, or whisper when it can't run).
+    @Published var engineRow: EngineChoice
+    /// The engine the config selects here: Automatic's pick, the configured
+    /// one, or whisper when it can't run (`engineNote` says why). The model
+    /// rows are its.
     @Published var engine: EngineKind
     @Published var modelRow: ModelRow
     @Published var language: String
@@ -116,7 +123,8 @@ final class SettingsViewModel: ObservableObject {
          speechAssets: SpeechModelAssets = LiveSpeechModelAssets(),
          modelDownloader: ModelDownloading = FolderModelDownloader.live,
          isFirstLoad: @escaping (ModelSpec) -> Bool = { _ in false },
-         modelsDir: URL = Paths.modelsDir) {
+         modelsDir: URL = Paths.modelsDir,
+         engineFacts: @escaping () -> EngineFacts? = { nil }) {
         self.configStore = configStore
         self.loginItem = loginItem
         self.availableMics = availableMics
@@ -132,6 +140,7 @@ final class SettingsViewModel: ObservableObject {
         self.modelDownloader = modelDownloader
         self.isFirstLoad = isFirstLoad
         self.modelsDir = modelsDir
+        self.engineFacts = engineFacts
         // This Mac's OS, with the injected hardware (so tests control both).
         self.environment = environment ?? EngineEnvironment(macOSMajor: EngineEnvironment.current.macOSMajor,
                                                             macOSMinor: EngineEnvironment.current.macOSMinor,
@@ -142,8 +151,11 @@ final class SettingsViewModel: ObservableObject {
         self.launchAtLogin = loginItem.isEnabled
         self.selectedMicUID = cfg.microphoneUID
         self.maxDictationSeconds = max(0, cfg.maxRecordingSeconds)
-        let engine = engines.select(engineID: cfg.engine, language: cfg.language, in: self.environment).kind
+        let selected = ModelSelection.select(cfg, environment: self.environment, engines: engines,
+                                             modelsDir: modelsDir, presentFilenames: presentModelFilenames(), facts: engineFacts())
+        let engine = selected.spec.engine
         self.engine = engine
+        self.engineRow = selected.isAutomatic ? .automatic : .engine(engine)
         self.modelRow = ModelRow(cfg, engine: engines.descriptor(for: engine) ?? engines.whisper)
         self.language = cfg.language
         self.keepWarm = KeepWarmChoice(cfg.keepModelWarm)

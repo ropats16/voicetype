@@ -29,6 +29,8 @@ final class SettingsModelTests: XCTestCase {
         tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("settings-model-test-\(UUID().uuidString).json")
         configStore = ConfigStore(url: tempURL)
+        // whisper's model section; Automatic engine picks are SettingsEngineTests'.
+        configStore.update { $0.engine = EngineKind.whisper.rawValue }
         applied = 0
         menuRefreshes = 0
         present = []

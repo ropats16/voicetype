@@ -21,11 +21,21 @@ final class EngineSelectionTests: XCTestCase {
 
     // MARK: - Config
 
-    func testAnOlderConfigRunsWhisperAsBefore() throws {
+    func testAConfigWithoutAnEngineIsAutomatic() throws {
         let config = try decode(#"{"model": "small.en-q5_1"}"#)
-        XCTAssertEqual(config.engine, "whisper")
+        XCTAssertEqual(config.engine, "auto")
+        XCTAssertEqual(config.engineChoice, .automatic)
+        XCTAssertEqual(Config.defaults.engineChoice, .automatic)
         XCTAssertEqual(config.engineModels, [:])
         XCTAssertEqual(config.modelChoice(for: .whisper), .named("small.en-q5_1"))
+    }
+
+    func testAnExplicitEngineIsKept() throws {
+        XCTAssertEqual(try decode(#"{"engine": "parakeet"}"#).engineChoice, .engine(.parakeet))
+        XCTAssertEqual(try decode(#"{"engine": "whisper"}"#).engineChoice, .engine(.whisper))
+        let back = try JSONDecoder().decode(Config.self, from: JSONEncoder().encode(try decode(#"{"engine": "parakeet"}"#)))
+        XCTAssertEqual(back.engine, "parakeet")
+        XCTAssertEqual(try decode(#"{"engine": "future-engine"}"#).engineChoice, nil, "Unknown: not a choice")
     }
 
     func testEngineKeysAreReadAndRoundTrip() throws {
@@ -87,12 +97,76 @@ final class EngineSelectionTests: XCTestCase {
 
     func testWhisperSelectionIsTheOldResolve() {
         let hardware = HardwareProfile(isAppleSilicon: true, memoryBytes: 8 << 30)
-        let selected = select(.defaults, on: EngineEnvironment(macOSMajor: 15, macOSMinor: 0, hardware: hardware),
+        var config = Config.defaults
+        config.engine = "whisper"
+        let selected = select(config, on: EngineEnvironment(macOSMajor: 15, macOSMinor: 0, hardware: hardware),
                               present: ["ggml-tiny.en.bin"])
-        XCTAssertEqual(selected.spec, ModelSelection.resolve(.defaults, hardware: hardware, modelsDir: modelsDir,
+        XCTAssertEqual(selected.spec, ModelSelection.resolve(config, hardware: hardware, modelsDir: modelsDir,
                                                              presentFilenames: ["ggml-tiny.en.bin"]))
         XCTAssertEqual(selected.spec, .file("/models/ggml-tiny.en.bin"))
         XCTAssertNil(selected.fallbackReason)
+    }
+
+    // MARK: - Automatic (`EnginePolicy`)
+
+    /// Turbo (fake parakeet) and Apple Speech (fake, macOS 26) beside whisper;
+    /// which models are installed comes from `EngineFacts`.
+    private let autoEngines = EngineRegistry([
+        WhisperEngine(),
+        FakeEngine(kind: .parakeet),
+        FakeEngine(kind: .appleSpeech, minimumMacOS: 26, supportedLanguages: ["en", "ja"]),
+    ])
+
+    private func selectAuto(_ config: Config = .defaults, on environment: EngineEnvironment = .mac(26, gib: 8),
+                            installed: Set<EngineKind>, failed: Set<EngineKind> = []) -> ModelSelection.Selected {
+        let facts = EngineFacts(isPresent: { installed.contains($0.engine) }, failed: failed)
+        return ModelSelection.select(config, environment: environment, engines: autoEngines, modelsDir: modelsDir,
+                                     presentFilenames: ["ggml-small.en-q5_1.bin"], facts: facts)
+    }
+
+    func testAutomaticRunsTurboWithItsOwnModelPick() {
+        var config = Config.defaults
+        config.setModelChoice(.named("big"), for: .parakeet)
+
+        let selected = selectAuto(config, installed: [.parakeet, .appleSpeech])
+
+        XCTAssertEqual(selected.spec, ModelSpec(path: "/models/fake-big", sha256: nil, language: "en", engine: .parakeet))
+        XCTAssertTrue(selected.isAutomatic)
+        XCTAssertNil(selected.fallbackReason)
+        XCTAssertNil(selected.note)
+    }
+
+    func testAutomaticWithoutTurboRunsAppleSpeechThenWhisper() {
+        let apple = selectAuto(installed: [.appleSpeech])
+        XCTAssertEqual(apple.spec.engine, .appleSpeech)
+        XCTAssertEqual(apple.fallbackReason, "Turbo isn't downloaded")
+        XCTAssertEqual(apple.note, "Using Apple Speech because Turbo isn't downloaded.")
+
+        let whisper = selectAuto(installed: [])
+        XCTAssertEqual(whisper.spec, .file("/models/ggml-small.en-q5_1.bin"), "whisper's RAM-tier Automatic (8 GB)")
+        XCTAssertEqual(whisper.note, "Using Whisper (whisper.cpp) because Turbo isn't downloaded.")
+    }
+
+    func testAutomaticSkipsAnEngineThatFailedToLoad() {
+        let selected = selectAuto(installed: [.parakeet], failed: [.parakeet])
+        XCTAssertEqual(selected.spec.engine, .whisper)
+        XCTAssertEqual(selected.fallbackReason, "Turbo failed to load")
+    }
+
+    func testAutomaticUnderAutoDetectRunsWhisper() {
+        var config = Config.defaults
+        config.language = ModelSpec.autoDetect
+        let selected = selectAuto(config, installed: [.parakeet, .appleSpeech])
+        XCTAssertEqual(selected.spec.engine, .whisper)
+        XCTAssertEqual(selected.fallbackReason, "Turbo doesn't detect the language")
+    }
+
+    func testAutomaticNeverRunsAnEngineWhoseModelIsMissing() {
+        // The fakes report presence by path; nothing installed → whisper, never a download.
+        let missing = EngineRegistry([WhisperEngine(), FakeEngine(kind: .parakeet, present: [])])
+        let selected = ModelSelection.select(.defaults, environment: .mac(26), engines: missing,
+                                             modelsDir: modelsDir, presentFilenames: [])
+        XCTAssertEqual(selected.spec.engine, .whisper)
     }
 
     // MARK: - Validation
@@ -106,6 +180,10 @@ final class EngineSelectionTests: XCTestCase {
             XCTAssertEqual(issues, [ConfigIssue(severity: .warning,
                                                 message: "`engine` \"\(id)\": \(reason); using Whisper (whisper.cpp).")])
         }
+    }
+
+    func testAutomaticIsNoIssue() {
+        XCTAssertEqual(ConfigValidator.validate(.defaults, engines: engines, environment: .mac(14, appleSilicon: false)), [])
     }
 
     func testARunnableEngineIsNoIssue() {

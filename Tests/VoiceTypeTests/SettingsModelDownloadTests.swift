@@ -306,7 +306,7 @@ final class SettingsModelDownloadTests: XCTestCase {
         let task = vm.downloadModel(key("big"))
         await eventually { self.downloader.started == ["big"] }
 
-        vm.selectEngine(.whisper)
+        vm.selectEngine(.engine(.whisper))
 
         XCTAssertEqual(vm.engine, .whisper)
         XCTAssertEqual(vm.inAppDownloadableModels.map(\.key), [key("big")])

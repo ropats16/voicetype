@@ -57,11 +57,12 @@ extension SettingsViewModel {
 
     // MARK: - Intents
 
-    /// Persists the engine pick and switches to it live (its own model pick,
-    /// Automatic by default). Only engines in `engineChoices` can be picked.
-    func selectEngine(_ kind: EngineKind) {
-        guard kind != engine, engineChoices.contains(kind) else { return }
-        configStore.update { $0.engine = kind.rawValue }
+    /// Persists the engine pick (Automatic or one engine) and switches to it
+    /// live (its own model pick, Automatic by default). Only rows in
+    /// `engineChoices` can be picked.
+    func selectEngine(_ choice: EngineChoice) {
+        guard choice != engineRow, engineChoices.contains(choice) else { return }
+        configStore.update { $0.engine = choice.id }
         refreshEngine()
         modelSettingsChanged()
     }
@@ -104,7 +105,10 @@ extension SettingsViewModel {
     }
 
     /// Called (on main) with each engine status, so the section can show it.
+    /// Also re-reads Automatic's pick, which the app may change by itself (a
+    /// failed load, Apple Speech's model turning up).
     func modelStatusChanged(_ status: TranscriptionStatus) {
+        if engineRow == .automatic { refreshEngine() }
         modelStatus = status
         switch status {
         case .failed(let reason): modelSwitchError = reason
@@ -115,19 +119,30 @@ extension SettingsViewModel {
 
     // MARK: - Display: engine
 
-    /// The engines offered: runnable on this Mac and taking the current
-    /// language (so Turbo shows only for English/EU languages). Always
-    /// includes the selected one.
-    var engineChoices: [EngineKind] {
+    /// The engine rows: Automatic first, then the engines runnable on this
+    /// Mac that take the current language (so Turbo shows only for
+    /// English/EU languages). Always includes the selected one.
+    var engineChoices: [EngineChoice] {
         let available = engines.available(in: environment, language: language)
-        return available.contains(engine) ? available : [engine] + available
+        let kinds = available.contains(engine) ? available : [engine] + available
+        return [.automatic] + kinds.map(EngineChoice.engine)
+    }
+
+    /// The Automatic row: the engine it runs, and why it isn't Turbo when it
+    /// isn't, e.g. "Automatic (Whisper — Turbo isn't downloaded)".
+    var automaticEngineLabel: String {
+        var config = configStore.config
+        config.engine = EngineChoice.automaticID
+        let selected = selection(config)
+        let name = selected.spec.engine.shortName
+        return selected.fallbackReason.map { "Automatic (\(name) — \($0))" } ?? "Automatic (\(name))"
     }
 
     /// "Using Whisper (whisper.cpp) because …" while the configured engine
-    /// can't run, else nil.
+    /// can't run, else nil (also under Automatic: its row says why).
     var engineNote: String? {
-        ModelSelection.select(configStore.config, environment: environment, engines: engines, modelsDir: modelsDir,
-                              presentFilenames: presentModelFilenames()).note
+        let selected = selection(configStore.config)
+        return selected.isAutomatic ? nil : selected.note
     }
 
     /// The selected engine's descriptor.
@@ -251,10 +266,18 @@ extension SettingsViewModel {
                             customPath: config.customModelPath(for: kind))
     }
 
+    /// What the app runs for `config` on this Mac, as `AppDelegate` resolves it.
+    func selection(_ config: Config) -> ModelSelection.Selected {
+        ModelSelection.select(config, environment: environment, engines: engines, modelsDir: modelsDir,
+                              presentFilenames: presentModelFilenames(), facts: engineFacts())
+    }
+
     /// Re-derives the selected engine (and its model row) from the config.
     private func refreshEngine() {
         let config = configStore.config
-        engine = engines.select(engineID: config.engine, language: config.language, in: environment).kind
+        let selected = selection(config)
+        engine = selected.spec.engine
+        engineRow = selected.isAutomatic ? .automatic : .engine(engine)
         modelRow = ModelRow(config, engine: descriptor)
     }
 
