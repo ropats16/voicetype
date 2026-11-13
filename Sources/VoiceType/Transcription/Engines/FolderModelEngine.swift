@@ -69,7 +69,7 @@ extension FolderModelEngine {
     /// Verified against the pinned manifest when it's a catalog folder.
     func spec(forModelArgument argument: String, language: String) -> ModelSpec {
         spec(folder: (argument as NSString).expandingTildeInPath,
-             language: language.isEmpty ? ModelSpec.autoDetect : language)
+             language: ModelSpec.language(language))
     }
 
     private func spec(folder: String, language: String) -> ModelSpec {

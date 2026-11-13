@@ -13,7 +13,7 @@ enum CommandLineSupport {
     /// this Mac and the models folder as they are now. A hand-set
     /// `modelPath` in config.json is ignored: pass it as `--model`.
     static func modelContext(language: String) -> ModelContext {
-        ModelContext(language: language.isEmpty ? ModelSpec.autoDetect : language, hardware: .current,
+        ModelContext(language: ModelSpec.language(language), hardware: .current,
                      modelsDir: Paths.modelsDir, presentFilenames: ModelSelection.presentFilenames())
     }
 

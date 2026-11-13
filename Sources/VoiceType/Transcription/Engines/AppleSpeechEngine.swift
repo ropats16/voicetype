@@ -47,7 +47,7 @@ struct AppleSpeechEngine: EngineDescriptor {
 
     /// No model to name: `--model` is ignored, `--language` picks the model.
     func spec(forModelArgument argument: String, language: String) -> ModelSpec {
-        .appleSpeech(language: language.isEmpty ? ModelSpec.autoDetect : language)
+        .appleSpeech(language: ModelSpec.language(language))
     }
 
     func makeAdapter(_ options: EngineOptions) -> (ModelSpec) throws -> TranscriptionAdapter {

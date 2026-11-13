@@ -88,17 +88,17 @@ final class ModelVerifier: @unchecked Sendable {
     /// The file's SHA-256: from the cache while the file is unchanged, else
     /// hashed (after `willHash`), logged and cached.
     func cachedSHA256(of path: String, willHash: () -> Void) throws -> String {
-        let result = try cachedSHA256Unlogged(of: path, willHash: willHash)
+        let result = try cachedSHA256WithTiming(of: path, willHash: willHash)
         if let seconds = result.hashSeconds {
             log("Checksummed \(URL(fileURLWithPath: path).lastPathComponent) in \(Self.seconds(seconds)).")
         }
         return result.sha256
     }
 
-    /// `cachedSHA256(of:willHash:)` without the log line, for callers that
-    /// sum up many files in one (`verifyFolder`). `hashSeconds` is how long
-    /// hashing took, nil when the cache answered.
-    func cachedSHA256Unlogged(of path: String, willHash: () -> Void) throws -> (sha256: String, hashSeconds: TimeInterval?) {
+    /// `cachedSHA256(of:willHash:)` with how long hashing took (nil when the
+    /// cache answered) instead of its log line, for callers that sum up many
+    /// files in one (`verifyFolder`).
+    func cachedSHA256WithTiming(of path: String, willHash: () -> Void) throws -> (sha256: String, hashSeconds: TimeInterval?) {
         let stamp = try Stamp(path: path)
         if let cached = lock.withLock({ loadedCache()[path] }), cached.stamp == stamp {
             return (cached.sha256, nil)

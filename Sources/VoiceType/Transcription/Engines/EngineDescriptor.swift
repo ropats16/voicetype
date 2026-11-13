@@ -96,7 +96,7 @@ extension EngineDescriptor {
 
     func spec(forModelArgument argument: String, language: String) -> ModelSpec {
         ModelSpec(path: (argument as NSString).expandingTildeInPath, sha256: nil,
-                  language: language.isEmpty ? ModelSpec.autoDetect : language, engine: kind)
+                  language: ModelSpec.language(language), engine: kind)
     }
 
     /// Whether the engine transcribes `language` (an ISO code or "auto").

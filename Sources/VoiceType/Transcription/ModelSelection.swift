@@ -26,11 +26,14 @@ extension ModelSpec {
     /// The language value meaning "detect it per job".
     static let autoDetect = "auto"
 
+    /// A language as given (config, `--language`): empty means auto-detect.
+    static func language(_ given: String) -> String { given.isEmpty ? autoDetect : given }
+
     /// A specific model file, verified against the catalog checksum if its name
     /// is a catalog file. English-only models always decode English.
     static func file(_ path: String, language: String = "en") -> ModelSpec {
         let path = (path as NSString).expandingTildeInPath
-        let language = language.isEmpty ? autoDetect : language
+        let language = Self.language(language)
         return ModelSpec(path: path, sha256: ModelCatalog.model(forFile: path)?.sha256,
                          language: ModelCatalog.isEnglishOnly(path) ? "en" : language)
     }

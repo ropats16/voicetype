@@ -34,7 +34,7 @@ extension ModelVerifier {
             }
         }
         func sha256(_ path: String) throws -> String {
-            let result = try cachedSHA256Unlogged(of: path, willHash: announce)
+            let result = try cachedSHA256WithTiming(of: path, willHash: announce)
             if let t = result.hashSeconds { hashed += 1; seconds += t }
             return result.sha256.lowercased()
         }
