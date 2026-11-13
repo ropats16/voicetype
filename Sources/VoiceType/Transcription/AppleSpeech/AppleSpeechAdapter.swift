@@ -70,8 +70,8 @@ enum AppleSpeechError: LocalizedError, Equatable {
 /// format, streamed in 1 s buffers, and finalized; final results only, with per-word times.
 /// The API is async; `transcribe` blocks the engine's queue on it with a
 /// deadline (`BlockingAsync.Bridge`). The model is retained for the process's
-/// lifetime once used (the engine's warm-up), and released when the adapter
-/// goes (unload, or a switch away).
+/// lifetime once used (the engine's warm-up), and released in the background
+/// when the adapter goes (unload, or a switch away).
 @available(macOS 26, *)
 final class AppleSpeechAdapter: TranscriptionAdapter {
     let locale: Locale
@@ -87,9 +87,13 @@ final class AppleSpeechAdapter: TranscriptionAdapter {
     }
 
     deinit {
-        // Bounded, so a reload right after (a switch) isn't released by a late call.
-        _ = try? BlockingAsync.run(timeout: 1) { await SpeechModels.endRetention() }
+        // In the background: the last reference may drop on main.
+        Self.release.start()
     }
+
+    /// Ends the model retention when an adapter goes. The next adapter's
+    /// setup waits for it, so a late release can't undo its retention.
+    private static let release = PendingRelease { await SpeechModels.endRetention() }
 
     func transcribe(samples: [Float]) throws -> [Transcript.Segment] {
         guard !samples.isEmpty else { return [] }
@@ -110,6 +114,7 @@ final class AppleSpeechAdapter: TranscriptionAdapter {
     static func jobTimeout(clipSeconds: Double) -> TimeInterval { 20 + clipSeconds }
 
     private static func prepare(_ language: String) async throws -> (Locale, AVAudioFormat) {
+        await release.settled()
         guard let locale = await AppleSpeechAssets.locale(for: language) else {
             throw AppleSpeechError.unsupportedLanguage(language)
         }
@@ -220,6 +225,32 @@ final class AppleSpeechAdapter: TranscriptionAdapter {
         do { return try bridge.run(timeout: timeout, work) } catch is BlockingAsync.TimedOut {
             throw AppleSpeechError.timedOut
         }
+    }
+}
+
+/// A release that runs in the background, in order, and that whoever must
+/// not overlap it can wait for (`settled`).
+final class PendingRelease: @unchecked Sendable {
+    private let action: @Sendable () async -> Void
+    private let lock = NSLock()
+    private var last: Task<Void, Never>?
+
+    init(_ action: @escaping @Sendable () async -> Void) { self.action = action }
+
+    /// Starts the release, after any still running; returns at once.
+    func start() {
+        lock.withLock {
+            let previous = last
+            last = Task.detached(priority: .userInitiated) { [action] in
+                await previous?.value
+                await action()
+            }
+        }
+    }
+
+    /// Returns once every release started so far has finished.
+    func settled() async {
+        await lock.withLock { last }?.value
     }
 }
 
