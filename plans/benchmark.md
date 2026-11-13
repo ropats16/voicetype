@@ -414,3 +414,28 @@ bench --model "$M/ggml-medium.en.bin" --json "$W/after.json"
 Between runs: wait ≥ 45 s, for thermal `nominal`, and for no other compile/test
 to be running. The bench takes the **first** occurrence of a flag, so a sweep
 script mustn't append overrides after a base set of flags.
+
+## Parakeet (#13) — results
+
+Run 2026-11-13, same Mac and fixtures as above (M3 Max, macOS 26.7.2, release,
+nominal), `--engine parakeet --language en --runs 3`, model folder
+`parakeet-tdt-0.6b-v3` (`make parakeet-model`; FluidAudio 0.17.7, default int8
+encoder), single uncooled run — treat as indicative.
+
+| engine / model | load | short p50 | short p90 | long RTF | peak mem | short WER | long WER |
+|---|---|---|---|---|---|---|---|
+| parakeet / tdt-0.6b-v3 | 0.19 s (first ever: 17 s) | 63 ms | 75 ms | 0.0035 (290×) | 169 MiB | 0.8% (1/127) | 2.39% (42/1754) |
+| whisper / medium.en (above) | 0.67 s | 290 ms | 323 ms | 0.0311 (32×) | 2,096 MiB | 3.1% (4/127) | 3.19% (56/1754) |
+
+**Parakeet notes.** The first load after a download compiles the models for the
+Neural Engine (~17 s, 534 MiB lifetime peak); Core ML caches that, so later
+loads take ~0.2 s, until an OS update or a model change. `phys_footprint` doesn't
+count Neural Engine memory, so the 169 MiB peak understates the real cost.
+Silence decodes to empty text. Follow-ups: (1) our manifest is tools 5.9, so
+FluidAudio's traits can't be turned off — its TTS and diarizer code and the
+NemoTextProcessing library (~8 MB) are compiled in; a tools-6.2 manifest with
+`traits: []` would drop them. (2) The default int8 encoder can flip tokens on
+some windows (FluidAudio #760); `Encoder_v2.mlmodelc` (int8-v2, +143 MB) fixes
+that — bench it before switching. (3) `scripts/package_app.sh` doesn't copy the
+`FluidAudio_FluidAudio.bundle` resource bundle; the ASR path never reads it, but
+FluidAudio's TTS would crash without it.

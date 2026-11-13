@@ -30,3 +30,21 @@ or at the linked URL.
 - **Whisper models** — OpenAI. MIT License (MIT). https://github.com/openai/whisper
   Model weights, converted to ggml format and published at
   https://huggingface.co/ggerganov/whisper.cpp; downloaded on demand.
+
+## Turbo (English/EU)
+
+- **Parakeet TDT 0.6B v3** — NVIDIA. Creative Commons Attribution 4.0
+  International (CC-BY-4.0). https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+  License: https://creativecommons.org/licenses/by/4.0/. Used unmodified, in
+  the Core ML conversion by FluidInference
+  (https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml);
+  downloaded on demand by `make parakeet-model`.
+- **FluidAudio** — FluidInference. Apache License 2.0 (Apache-2.0).
+  https://github.com/FluidInference/FluidAudio
+  Runs Parakeet on Core ML (Neural Engine); linked into the app.
+- **NemoTextProcessing (text-processing-rs)** — FluidInference. Apache License
+  2.0 (Apache-2.0). https://github.com/FluidInference/text-processing-rs
+  Prebuilt library, linked in through FluidAudio.
+- **fastcluster** — © 2011 Daniel Müllner; changes from 1.1.24 © Google Inc.
+  BSD 2-Clause License (BSD-2-Clause). https://danifold.net/fastcluster.html
+  Linked in through FluidAudio.

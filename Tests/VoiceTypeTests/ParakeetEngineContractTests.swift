@@ -1,60 +1,38 @@
 import XCTest
-import AVFoundation
 @testable import VoiceType
 
-/// Contract test for the Parakeet adapter, run through the engine against the
-/// real v3 model folder and whisper.cpp's bundled JFK sample. Skipped when
-/// either is absent (fetch the model with `make parakeet-model`).
+/// Contract test for the Parakeet adapter, through the registry and the
+/// engine exactly as the app runs it, against the real v3 model folder.
+/// Skipped when it's absent (fetch it with `make parakeet-model`).
 final class ParakeetEngineContractTests: XCTestCase {
 
     private let model = ParakeetCatalog.defaultModel
-    private var folder: String { model.folder().path }
-    private let wavPath = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        .appendingPathComponent("Sources/CWhisper/whisper.cpp/samples/jfk.wav").path
+
+    private func spec(language: String = "en") -> ModelSpec {
+        ModelSpec(path: model.folder().path, sha256: nil, language: language, engine: .parakeet)
+    }
 
     /// In-memory checksum cache: keeps these tests from writing the user's.
     private func makeEngine(language: String = "en") throws -> TranscriptionEngine {
-        try XCTSkipUnless(FileManager.default.fileExists(atPath: folder), "\(model.id) not downloaded")
-        return TranscriptionEngine(
-            model: ModelSpec(path: folder, sha256: nil, language: language),
-            makeAdapter: TranscriptionEngine.parakeetAdapter(verifier: ModelVerifier(cacheURL: nil)))
+        let spec = spec(language: language)
+        try XCTSkipUnless(ParakeetEngine().isPresent(spec), "\(model.id) not downloaded")
+        return TranscriptionEngine(model: spec, verifier: ModelVerifier(cacheURL: nil),
+                                   isPresent: ParakeetEngine().isPresent,
+                                   makeAdapter: TranscriptionEngine.parakeetAdapter(verifier: ModelVerifier(cacheURL: nil)))
     }
 
-    func testTranscribesJFKSampleIntoOrderedTimestampedSegments() async throws {
-        let engine = try makeEngine()
-        try XCTSkipUnless(FileManager.default.fileExists(atPath: wavPath), "jfk.wav fixture not present")
-        let samples = try loadMono16k(wavPath)
-
-        engine.load()
-        let transcript = try await engine.transcribe(samples)
-
-        XCTAssertEqual(engine.status, .ready)
-        XCTAssertTrue(transcript.text.lowercased().contains("country"),
-                      "Expected the JFK quote, got: \(transcript.text)")
-        XCTAssertFalse(transcript.segments.isEmpty)
+    func testTranscribesJFK() async throws {
+        let transcript = try await EngineContract.assertTranscribesJFK(spec())
         XCTAssertEqual(transcript.segments.first?.text.first, " ", "segments carry whisper's leading space")
-
-        let duration = Double(samples.count) / 16_000
-        var previousEnd: TimeInterval = 0
         for segment in transcript.segments {
             XCTAssertFalse(segment.text.trimmingCharacters(in: .whitespaces).isEmpty)
-            XCTAssertLessThanOrEqual(previousEnd, segment.start, "Segments must not go back in time")
-            XCTAssertLessThanOrEqual(segment.start, segment.end)
-            previousEnd = segment.end
         }
-        XCTAssertGreaterThan(previousEnd, 1, "Timestamps must be real, not all zero")
-        XCTAssertLessThanOrEqual(previousEnd, duration + 0.5, "Timestamps stay within the clip")
     }
 
     /// Silence decodes to nothing: no tags, no hallucinated words.
     func testSilenceYieldsNothing() async throws {
-        let engine = try makeEngine()
-        engine.load()
-        let transcript = try await engine.transcribe([Float](repeating: 0, count: 16_000 * 3))
-        XCTAssertNil(transcript.text.rangeOfCharacter(from: CharacterSet(charactersIn: "[]()♪*")),
-                     "Got tags: \(transcript.text)")
-        XCTAssertEqual(transcript.text.trimmingCharacters(in: .whitespaces), "")
+        let text = try await EngineContract.assertSilenceYieldsNoTags(spec())
+        XCTAssertEqual(text.trimmingCharacters(in: .whitespaces), "")
     }
 
     /// Clips under FluidAudio's 0.3 s minimum (a tap of the hotkey), and
@@ -72,9 +50,9 @@ final class ParakeetEngineContractTests: XCTestCase {
     /// works (JFK is English, but Latin script like German).
     func testLanguageHintStillTranscribes() async throws {
         let engine = try makeEngine(language: "de")
-        try XCTSkipUnless(FileManager.default.fileExists(atPath: wavPath), "jfk.wav fixture not present")
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: EngineContract.jfkPath), "jfk.wav fixture not present")
         engine.load()
-        let transcript = try await engine.transcribe(try loadMono16k(wavPath))
+        let transcript = try await engine.transcribe(try EngineContract.loadMono16k(EngineContract.jfkPath))
         XCTAssertEqual(engine.status, .ready)
         XCTAssertFalse(transcript.text.trimmingCharacters(in: .whitespaces).isEmpty)
     }
@@ -87,19 +65,8 @@ final class ParakeetEngineContractTests: XCTestCase {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent()) }
         let make = TranscriptionEngine.parakeetAdapter(verifier: ModelVerifier(cacheURL: nil))
-        XCTAssertThrowsError(try make(ModelSpec(path: dir.path, sha256: nil, language: "en"))) { error in
-            XCTAssertTrue(error is ParakeetModelIncomplete, "\(error)")
+        XCTAssertThrowsError(try make(ModelSpec(path: dir.path, sha256: nil, language: "en", engine: .parakeet))) {
+            XCTAssertTrue($0 is ParakeetModelIncomplete, "\($0)")
         }
-    }
-
-    /// The fixture is already 16 kHz mono, so read it straight.
-    private func loadMono16k(_ path: String) throws -> [Float] {
-        let file = try AVAudioFile(forReading: URL(fileURLWithPath: path))
-        XCTAssertEqual(file.processingFormat.sampleRate, 16_000)
-        XCTAssertEqual(file.processingFormat.channelCount, 1)
-        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: file.processingFormat,
-                                                    frameCapacity: AVAudioFrameCount(file.length)))
-        try file.read(into: buffer)
-        return Array(UnsafeBufferPointer(start: buffer.floatChannelData![0], count: Int(buffer.frameLength)))
     }
 }

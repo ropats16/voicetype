@@ -44,6 +44,12 @@ struct ParakeetModel: Hashable, Identifiable {
         ParakeetCatalog.directory(in: modelsDir).appendingPathComponent(id, isDirectory: true)
     }
 
+    /// The first pinned file not in `folder` (presence only, no hashing);
+    /// nil when all are there.
+    func firstMissingFile(in folder: URL) -> File? {
+        files.first { !FileManager.default.fileExists(atPath: folder.appendingPathComponent($0.path).path) }
+    }
+
     /// Throws unless `folder` holds every pinned file, byte for byte:
     /// `ParakeetModelIncomplete` for the first missing file (checked before
     /// any hashing), `ModelChecksumMismatch` (named by relative path) for the
@@ -51,9 +57,7 @@ struct ParakeetModel: Hashable, Identifiable {
     /// makes a re-check of an unchanged folder cheap. `willHash` runs before
     /// the first file that must actually be hashed.
     func verify(folder: URL, verifier: ModelVerifier, willHash: () -> Void = {}) throws {
-        if let missing = files.first(where: {
-            !FileManager.default.fileExists(atPath: folder.appendingPathComponent($0.path).path)
-        }) {
+        if let missing = firstMissingFile(in: folder) {
             throw ParakeetModelIncomplete(model: id, missing: missing.path)
         }
         var announced = false
