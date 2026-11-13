@@ -73,6 +73,24 @@ struct SettingsView: View {
 
             // MARK: Model
             Section {
+                // Only worth a picker once this Mac has a choice of engines.
+                if viewModel.engineChoices.count > 1 {
+                    Picker("Engine",
+                           selection: Binding(
+                               get: { viewModel.engine },
+                               set: { viewModel.selectEngine($0) }
+                           )) {
+                        ForEach(viewModel.engineChoices, id: \.self) { kind in
+                            Text(kind.displayName).tag(kind)
+                        }
+                    }
+                }
+                if let note = viewModel.engineNote {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
                 let lists = viewModel.modelLists
                 Picker("Model",
                        selection: Binding(
@@ -86,7 +104,7 @@ struct SettingsView: View {
                     ForEach(lists.downloaded) { model in
                         Text(model.label).tag(ModelRow.catalog(model.id))
                     }
-                    Section("Not downloaded — run: make model MODEL=<name>") {
+                    Section(viewModel.notDownloadedHeading) {
                         ForEach(lists.notDownloaded) { model in
                             Text(model.label).tag(ModelRow.catalog(model.id)).disabled(true)
                         }

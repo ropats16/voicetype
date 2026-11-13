@@ -34,6 +34,9 @@ final class SettingsViewModel: ObservableObject {
     let currentModel: () -> ModelSpec
     /// Re-resolves the model settings and hands them to the engine (live switch).
     let onModelSettingsChange: () -> Void
+    /// The engines this build has, and the Mac they're gated on.
+    let engines: EngineRegistry
+    let environment: EngineEnvironment
 
     // MARK: - Published display state
 
@@ -47,6 +50,9 @@ final class SettingsViewModel: ObservableObject {
     // MARK: - Model display state
 
     // Intents and derived values: SettingsViewModel+Model.swift.
+    /// The engine the config selects here: the configured one, or whisper
+    /// when it can't run (`engineNote` says why). The model rows are its.
+    @Published var engine: EngineKind
     @Published var modelRow: ModelRow
     @Published var language: String
     @Published var keepWarm: KeepWarmChoice
@@ -85,7 +91,9 @@ final class SettingsViewModel: ObservableObject {
          hardware: HardwareProfile,
          currentModel: @escaping () -> ModelSpec,
          modelStatus: TranscriptionStatus,
-         onModelSettingsChange: @escaping () -> Void) {
+         onModelSettingsChange: @escaping () -> Void,
+         engines: EngineRegistry = .shared,
+         environment: EngineEnvironment? = nil) {
         self.configStore = configStore
         self.loginItem = loginItem
         self.availableMics = availableMics
@@ -96,13 +104,20 @@ final class SettingsViewModel: ObservableObject {
         self.hardware = hardware
         self.currentModel = currentModel
         self.onModelSettingsChange = onModelSettingsChange
+        self.engines = engines
+        // This Mac's OS, with the injected hardware (so tests control both).
+        self.environment = environment ?? EngineEnvironment(macOSMajor: EngineEnvironment.current.macOSMajor,
+                                                            macOSMinor: EngineEnvironment.current.macOSMinor,
+                                                            hardware: hardware)
         // Initialise display state from persisted config + current login-item status.
         let cfg = configStore.config
         self.soundCues = cfg.soundCues
         self.launchAtLogin = loginItem.isEnabled
         self.selectedMicUID = cfg.microphoneUID
         self.maxDictationSeconds = max(0, cfg.maxRecordingSeconds)
-        self.modelRow = ModelRow(cfg)
+        let engine = engines.select(engineID: cfg.engine, language: cfg.language, in: self.environment).kind
+        self.engine = engine
+        self.modelRow = ModelRow(cfg, engine: engines.descriptor(for: engine) ?? engines.whisper)
         self.language = cfg.language
         self.keepWarm = KeepWarmChoice(cfg.keepModelWarm)
         self.modelStatus = modelStatus

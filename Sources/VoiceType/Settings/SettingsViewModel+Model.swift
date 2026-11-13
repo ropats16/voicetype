@@ -1,12 +1,13 @@
 import Foundation
 
-/// A row of the Settings model picker.
+/// A row of the Settings model picker, for the selected engine.
 enum ModelRow: Hashable {
     case automatic
-    /// A hand-set `modelPath` (or model name) outside the catalog.
+    /// A hand-set `modelPath` (or model name) outside the engine's catalog.
     case custom
     case catalog(String)
 
+    /// whisper's row: `modelPath`, else `model`.
     init(_ config: Config) {
         if !config.modelPath.isEmpty {
             self = ModelCatalog.model(forFile: config.modelPath).map { .catalog($0.id) } ?? .custom
@@ -14,6 +15,15 @@ enum ModelRow: Hashable {
             self = ModelCatalog.model(id: id) != nil ? .catalog(id) : .custom
         } else {
             self = .automatic
+        }
+    }
+
+    /// `engine`'s row: its pick (`Config.modelChoice(for:)`) among its models.
+    init(_ config: Config, engine: any EngineDescriptor) {
+        guard engine.kind != .whisper else { self.init(config); return }
+        switch config.modelChoice(for: engine.kind) {
+        case .automatic: self = .automatic
+        case .named(let id): self = engine.models.contains { $0.id == id } ? .catalog(id) : .custom
         }
     }
 }
@@ -39,16 +49,27 @@ enum KeepWarmChoice: Hashable, CaseIterable {
     }
 }
 
-/// The Settings model section: model (or Automatic), language and keep-warm,
-/// each persisted and applied live through `onModelSettingsChange`. What the
-/// engine actually runs comes from `currentModel`, never re-derived here.
+/// The Settings model section: engine, model (or Automatic), language and
+/// keep-warm, each persisted and applied live through `onModelSettingsChange`.
+/// What the engine actually runs comes from `currentModel`, never re-derived
+/// here.
 extension SettingsViewModel {
 
     // MARK: - Intents
 
-    /// Persists the pick (Automatic or a downloaded catalog model) and switches
-    /// the engine to it live. Models that aren't downloaded, and the custom
-    /// row (set by hand in `config.json`), can't be picked.
+    /// Persists the engine pick and switches to it live (its own model pick,
+    /// Automatic by default). Only engines in `engineChoices` can be picked.
+    func selectEngine(_ kind: EngineKind) {
+        guard kind != engine, engineChoices.contains(kind) else { return }
+        configStore.update { $0.engine = kind.rawValue }
+        refreshEngine()
+        modelSettingsChanged()
+    }
+
+    /// Persists the pick (Automatic or a downloaded catalog model of the
+    /// selected engine) and switches the engine to it live. Models that
+    /// aren't downloaded, and the custom row (set by hand in `config.json`),
+    /// can't be picked.
     func selectModel(_ row: ModelRow) {
         guard row != modelRow else { return }
         let choice: ModelChoice
@@ -58,23 +79,21 @@ extension SettingsViewModel {
         case .custom:
             return
         case .catalog(let id):
-            guard let model = ModelCatalog.model(id: id),
-                  presentModelFilenames().contains(model.filename) else { return }
+            guard descriptor.installedModelIDs(in: modelContext).contains(id) else { return }
             choice = .named(id)
         }
-        configStore.update {
-            $0.model = choice
-            $0.modelPath = ""   // a pick replaces any hand-set file
-        }
+        configStore.update { [engine] in $0.setModelChoice(choice, for: engine) }
         modelRow = row
         modelSettingsChanged()
     }
 
     /// Persists the decode language (`ModelSpec.autoDetect` or an ISO code);
-    /// only multilingual models use it.
+    /// only multilingual models use it. An engine that doesn't take the
+    /// language gives way to whisper until one it does is picked.
     func setLanguage(_ code: String) {
         configStore.update { $0.language = code }
         language = code
+        refreshEngine()
         modelSettingsChanged()
     }
 
@@ -94,16 +113,42 @@ extension SettingsViewModel {
         }
     }
 
-    // MARK: - Display
+    // MARK: - Display: engine
+
+    /// The engines offered: runnable on this Mac and taking the current
+    /// language (so Turbo shows only for English/EU languages). Always
+    /// includes the selected one.
+    var engineChoices: [EngineKind] {
+        let available = engines.available(in: environment, language: language)
+        return available.contains(engine) ? available : [engine] + available
+    }
+
+    /// "Using Whisper (whisper.cpp) because …" while the configured engine
+    /// can't run, else nil.
+    var engineNote: String? {
+        ModelSelection.select(configStore.config, environment: environment, engines: engines,
+                              presentFilenames: presentModelFilenames()).note
+    }
+
+    /// The selected engine's descriptor.
+    var descriptor: any EngineDescriptor { engines.descriptor(for: engine) ?? engines.whisper }
+
+    // MARK: - Display: model
 
     /// What Automatic picks on this Mac (for the current language).
     var recommendedModel: WhisperModel {
         ModelCatalog.recommended(for: hardware, language: configStore.config.language)
     }
 
-    /// The Automatic row, naming the model really in use when it isn't the
-    /// recommended one.
+    /// The Automatic row: for whisper, naming the model really in use when it
+    /// isn't the recommended one; for other engines, the model it resolves to.
     var automaticLabel: String {
+        guard engine == .whisper else {
+            let context = modelContext
+            let auto = descriptor.resolve(.automatic, in: context)
+            let label = descriptor.models.first { descriptor.resolve(.named($0.id), in: context) == auto }?.label
+            return label.map { "Automatic (\($0))" } ?? "Automatic"
+        }
         let recommended = recommendedModel
         guard modelRow == .automatic, let using = ModelCatalog.model(forFile: currentModel().path),
               using != recommended else { return "Automatic (\(recommended.label))" }
@@ -111,11 +156,17 @@ extension SettingsViewModel {
         return "Automatic — using \(using.id) (\(recommended.id) \(why))"
     }
 
-    /// Catalog models split by whether they're in the models folder, in catalog order.
-    var modelLists: (downloaded: [WhisperModel], notDownloaded: [WhisperModel]) {
-        let present = presentModelFilenames()
-        let split = Dictionary(grouping: ModelCatalog.models) { present.contains($0.filename) }
+    /// The selected engine's models split by whether they're installed, in
+    /// catalog order.
+    var modelLists: (downloaded: [EngineModelOption], notDownloaded: [EngineModelOption]) {
+        let installed = descriptor.installedModelIDs(in: modelContext)
+        let split = Dictionary(grouping: descriptor.models) { installed.contains($0.id) }
         return (split[true] ?? [], split[false] ?? [])
+    }
+
+    /// The heading over models that aren't installed.
+    var notDownloadedHeading: String {
+        engine == .whisper ? "Not downloaded — run: make model MODEL=<name>" : "Not downloaded"
     }
 
     /// The file name of the custom model, when that row is selected.
@@ -123,8 +174,11 @@ extension SettingsViewModel {
         modelRow == .custom ? URL(fileURLWithPath: currentModel().path).lastPathComponent : nil
     }
 
-    /// False for English-only models, which always decode English.
-    var isLanguageSelectable: Bool { !ModelCatalog.isEnglishOnly(currentModel().path) }
+    /// False for whisper's English-only models, which always decode English.
+    var isLanguageSelectable: Bool {
+        let model = currentModel()
+        return model.engine != .whisper || !ModelCatalog.isEnglishOnly(model.path)
+    }
 
     /// The languages offered for multilingual models, plus a hand-set code from
     /// `config.json` so the picker always shows the truth.
@@ -155,14 +209,34 @@ extension SettingsViewModel {
         switch modelStatus {
         case .missing:
             let spec = currentModel()
-            return ModelSelection.downloadCommand(for: spec).map { "Not downloaded. Run: \($0)" }
-                ?? "Model file not found: \(spec.path)"
+            switch engines.downloadHint(for: spec) {
+            case .command(let command)?: return "Not downloaded. Run: \(command)"
+            case .instructions(let text)?: return text
+            case nil: return "Model file not found: \(spec.path)"
+            }
         case .failed(let reason): return "Failed to load: \(reason)"
         case .verifying: return "Verifying the model's checksum (first use)…"
         case .loading: return "Loading model…"
         case .ready: return modelSwitchError
         case .notLoaded: return nil
         }
+    }
+
+    // MARK: - Private
+
+    /// What the selected engine resolves models against.
+    private var modelContext: ModelContext {
+        let config = configStore.config
+        return ModelContext(language: config.language, hardware: hardware, modelsDir: Paths.modelsDir,
+                            presentFilenames: presentModelFilenames(),
+                            customPath: engine == .whisper ? config.modelPath : "")
+    }
+
+    /// Re-derives the selected engine (and its model row) from the config.
+    private func refreshEngine() {
+        let config = configStore.config
+        engine = engines.select(engineID: config.engine, language: config.language, in: environment).kind
+        modelRow = ModelRow(config, engine: descriptor)
     }
 
     private func modelSettingsChanged() {
