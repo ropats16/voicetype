@@ -53,7 +53,11 @@ final class WhisperKitAdapter: TranscriptionAdapter {
             usePrefillPrompt: true,
             detectLanguage: lang == nil,
             skipSpecialTokens: true,
-            withoutTimestamps: false   // segments carry start/end times
+            withoutTimestamps: false,  // segments carry start/end times
+            // Audio over one 30 s window is split at silences and the chunks
+            // decoded concurrently: ~3x faster on long audio (bench, #12), no
+            // effect on a dictation-length clip.
+            chunkingStrategy: .vad
         )
     }
 
