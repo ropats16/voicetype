@@ -205,6 +205,9 @@ let package = Package(
         // to one minor line; models load from a local folder, never downloaded
         // at runtime (ParakeetAdapter).
         .package(url: "https://github.com/FluidInference/FluidAudio.git", .upToNextMinor(from: "0.17.7")),
+        // WhisperKit (Core ML / Neural Engine engine, #12). The repo was renamed
+        // from argmaxinc/WhisperKit; only its WhisperKit product is linked.
+        .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", .upToNextMinor(from: "1.1.1")),
     ],
     targets: [
         // C/C++/ObjC target: whisper + ggml (+ Metal backend on arm64), no cmake.
@@ -227,8 +230,11 @@ let package = Package(
         ),
         .executableTarget(
             name: "VoiceType",
-            dependencies: ["CWhisper", "CAudioRing",
-                           .product(name: "FluidAudio", package: "FluidAudio")],
+            dependencies: [
+                "CWhisper", "CAudioRing",
+                .product(name: "FluidAudio", package: "FluidAudio"),
+                .product(name: "WhisperKit", package: "argmax-oss-swift"),
+            ],
             path: "Sources/VoiceType",
             swiftSettings: whisperImporterSettings,
             linkerSettings: [
