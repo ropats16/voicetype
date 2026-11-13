@@ -20,11 +20,15 @@ extension TranscriptionEngine {
 
 /// `TranscriptionAdapter` over WhisperKit. WhisperKit is async; the adapter
 /// protocol is sync and only ever called on the engine's serial background
-/// queue, so each call blocks that queue on a detached task. WhisperKit never
-/// hops to the main actor, so this can't deadlock — but it must not be called
-/// on main (asserted).
+/// queue, so each call blocks that queue on a detached task
+/// (`BlockingAsync`). WhisperKit never hops to the main actor, so this can't
+/// deadlock — but it must not be called on main (asserted).
 final class WhisperKitAdapter: TranscriptionAdapter {
-    private let pipe: WhisperKit
+    /// A first load specializes the model for this Mac's Neural Engine: ~66 s
+    /// for large-v3-turbo (626 MB) on an M3 Max; allow for slower Macs.
+    static let loadTimeout: TimeInterval = 900
+    /// Only ever used by one job at a time (the engine's queue serializes them).
+    private let pipe: Unchecked<WhisperKit>
     private let options: DecodingOptions
 
     init(modelFolder: String, language: String) throws {
@@ -33,11 +37,13 @@ final class WhisperKitAdapter: TranscriptionAdapter {
         guard FileManager.default.fileExists(atPath: folder.appendingPathComponent("tokenizer.json").path) else {
             throw TranscriptionError.modelLoadFailed(path: modelFolder)
         }
-        let config = WhisperKitConfig(modelFolder: folder.path, tokenizerFolder: folder,
-                                      verbose: false, logLevel: .none, load: true, download: false)
         let start = Date()
         do {
-            pipe = try Self.blocking { try await WhisperKit(config) }
+            pipe = try Self.blocking(timeout: Self.loadTimeout) {
+                Unchecked(try await WhisperKit(WhisperKitConfig(
+                    modelFolder: folder.path, tokenizerFolder: folder,
+                    verbose: false, logLevel: .none, load: true, download: false)))
+            }
         } catch {
             Log.error("WhisperKit failed to load \(folder.lastPathComponent): \(error)")
             throw TranscriptionError.modelLoadFailed(path: modelFolder)
@@ -67,8 +73,10 @@ final class WhisperKitAdapter: TranscriptionAdapter {
         options.windowClipTime = Self.windowClipTime(forSampleCount: samples.count)
         let results: [TranscriptionResult]
         do {
-            results = try Self.blocking { [pipe, options] in
-                try await pipe.transcribe(audioArray: samples, decodeOptions: options)
+            // Far beyond real time (large-v3-turbo runs ~16x): just a backstop.
+            let timeout = max(120, Double(samples.count) / Double(WhisperKit.sampleRate))
+            results = try Self.blocking(timeout: timeout) { [pipe, options] in
+                try await pipe.value.transcribe(audioArray: samples, decodeOptions: options)
             }
         } catch {
             Log.error("WhisperKit transcription failed: \(error)")
@@ -103,23 +111,17 @@ final class WhisperKitAdapter: TranscriptionAdapter {
         return NonSpeechFilter.filter(spoken)
     }
 
-    /// Runs `work` on the concurrency pool and blocks this (non-main, non-pool)
-    /// thread until it finishes.
-    private static func blocking<T>(_ work: @escaping () async throws -> T) throws -> T {
+    /// `BlockingAsync.run`, never on main.
+    private static func blocking<T>(timeout: TimeInterval,
+                                    _ work: @escaping @Sendable () async throws -> T) throws -> T {
         dispatchPrecondition(condition: .notOnQueue(.main))
-        let done = DispatchSemaphore(value: 0)
-        let box = ResultBox<T>()
-        Task.detached {
-            do { box.result = .success(try await work()) } catch { box.result = .failure(error) }
-            done.signal()
-        }
-        done.wait()
-        return try box.result!.get()
+        return try BlockingAsync.run(timeout: timeout, work)
     }
+}
 
-    /// Hands a result across the semaphore; written once before `signal`,
-    /// read once after `wait`.
-    private final class ResultBox<T>: @unchecked Sendable {
-        var result: Result<T, Error>?
-    }
+/// Carries a non-`Sendable` value into `BlockingAsync`'s detached task; safe
+/// here because the engine never runs two jobs on one adapter at once.
+private struct Unchecked<Value>: @unchecked Sendable {
+    let value: Value
+    init(_ value: Value) { self.value = value }
 }
