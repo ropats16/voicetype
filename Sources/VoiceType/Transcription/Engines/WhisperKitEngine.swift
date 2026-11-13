@@ -4,7 +4,7 @@ import Foundation
 /// `EngineDescriptor`. Apple Silicon only (Intel has no Neural Engine; Core
 /// ML would fall back to the CPU). Any language whisper takes, auto-detect
 /// included, with a multilingual model. A model is a folder,
-/// `<models>/whisperkit/<id>`, fetched by `make whisperkit-model` and
+/// `<models>/whisperkit/<id>`, fetched by Settings' Download button or `make whisperkit-model` and
 /// verified against its pinned manifest before loading (`FolderModelEngine`).
 struct WhisperKitEngine: FolderModelEngine {
     typealias Catalog = WhisperKitCatalog

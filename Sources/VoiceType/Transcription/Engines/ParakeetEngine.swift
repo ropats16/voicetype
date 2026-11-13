@@ -3,7 +3,7 @@ import Foundation
 /// Parakeet TDT v3 (via FluidAudio) as an `EngineDescriptor`: the opt-in
 /// "Turbo (English/EU)" engine. Apple Silicon only (it runs on the Neural
 /// Engine) and only for its 25 European languages, picked explicitly. A model is a folder,
-/// `<models>/parakeet/<id>`, fetched by `make parakeet-model` and verified
+/// `<models>/parakeet/<id>`, fetched by Settings' Download button or `make parakeet-model` and verified
 /// against its pinned manifest before loading (`FolderModelEngine`).
 struct ParakeetEngine: FolderModelEngine {
     typealias Catalog = ParakeetCatalog
