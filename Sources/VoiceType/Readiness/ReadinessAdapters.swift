@@ -13,9 +13,9 @@ extension EngineReadiness {
     /// The engine as it is now. Read live rather than from the status just
     /// pushed: after a failed switch the engine is already back on the
     /// previous model, and a re-download hint must not name the wrong file.
-    init(_ engine: TranscriptionEngine) {
+    /// The hint comes from the model's own engine (`engines`).
+    init(_ engine: TranscriptionEngine, engines: EngineRegistry = .shared) {
         let model = engine.model
-        self.init(status: engine.status, modelPath: model.path,
-                  downloadCommand: ModelSelection.downloadCommand(for: model))
+        self.init(status: engine.status, modelPath: model.path, download: engines.downloadHint(for: model))
     }
 }

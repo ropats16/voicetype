@@ -16,12 +16,14 @@ protocol PermissionProbe: AnyObject {
 }
 
 /// What readiness needs to know about the engine: its status, and enough
-/// about its model to tell the user how to fix a missing or broken file.
+/// about its model to tell the user how to fix a missing or broken model.
 struct EngineReadiness: Equatable {
     var status: TranscriptionStatus
+    /// `ModelSpec.path`: a file, a directory, or an OS-managed model's id.
     var modelPath: String
-    /// The command that downloads the model; nil for a custom file.
-    var downloadCommand: String?
+    /// How to get the model, from its engine's descriptor; nil for a custom
+    /// file (or an engine with nothing to suggest).
+    var download: ModelDownloadHint?
 }
 
 /// The global hotkey tap. `HotkeyManager.start()` only says installed or not;

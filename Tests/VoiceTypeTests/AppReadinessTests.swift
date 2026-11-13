@@ -23,10 +23,11 @@ final class AppReadinessTests: XCTestCase {
     }
 
     private static let modelPath = "/models/ggml-base.en.bin"
-    private static let download = "make model MODEL=base.en"
+    private static let command = "make model MODEL=base.en"
+    private static let download = ModelDownloadHint.command(command)
 
-    private func engine(_ status: TranscriptionStatus, download: String? = AppReadinessTests.download) -> EngineReadiness {
-        EngineReadiness(status: status, modelPath: Self.modelPath, downloadCommand: download)
+    private func engine(_ status: TranscriptionStatus, download: ModelDownloadHint? = AppReadinessTests.download) -> EngineReadiness {
+        EngineReadiness(status: status, modelPath: Self.modelPath, download: download)
     }
 
     private func inputs(accessibility: AccessibilityPermission = .granted,
@@ -114,8 +115,8 @@ final class AppReadinessTests: XCTestCase {
         let missing = AppReadiness.status(for: inputs(engine: .missing))
         let failed = AppReadiness.status(for: inputs(engine: .failed(reason: "bad file")))
 
-        XCTAssertEqual(missing, .notReady(.modelMissing(path: Self.modelPath, downloadCommand: Self.download)))
-        XCTAssertEqual(failed, .notReady(.modelFailed(reason: "bad file", downloadCommand: Self.download)))
+        XCTAssertEqual(missing, .notReady(.modelMissing(path: Self.modelPath, download: Self.download)))
+        XCTAssertEqual(failed, .notReady(.modelFailed(reason: "bad file", download: Self.download)))
         XCTAssertNotEqual(missing, failed)
         XCTAssertEqual(missing.title, "Model missing")
         XCTAssertEqual(failed.title, "Model failed to load")
@@ -126,18 +127,18 @@ final class AppReadinessTests: XCTestCase {
     }
 
     func testModelHintsKeepTheMenuWording() {
-        XCTAssertEqual(ReadinessIssue.modelMissing(path: Self.modelPath, downloadCommand: Self.download).detail,
-                       "Model missing — run `\(Self.download)`")
-        XCTAssertEqual(ReadinessIssue.modelMissing(path: Self.modelPath, downloadCommand: nil).detail,
+        XCTAssertEqual(ReadinessIssue.modelMissing(path: Self.modelPath, download: Self.download).detail,
+                       "Model missing — run `\(Self.command)`")
+        XCTAssertEqual(ReadinessIssue.modelMissing(path: Self.modelPath, download: nil).detail,
                        "Model file missing — see Settings")
-        XCTAssertEqual(ReadinessIssue.modelFailed(reason: "x", downloadCommand: nil).detail,
+        XCTAssertEqual(ReadinessIssue.modelFailed(reason: "x", download: nil).detail,
                        "Model failed to load — see log")
-        XCTAssertEqual(ReadinessIssue.modelFailed(reason: "x", downloadCommand: Self.download).detail,
-                       "Model failed to load — see log, or try `\(Self.download)` to re-download it")
+        XCTAssertEqual(ReadinessIssue.modelFailed(reason: "x", download: Self.download).detail,
+                       "Model failed to load — see log, or try `\(Self.command)` to re-download it")
     }
 
     func testModelNoticesKeepTheirWording() {
-        let path = Self.modelPath, command = Self.download
+        let path = Self.modelPath, command = Self.command
         XCTAssertEqual(ModelHints.notice(for: .missing, engine: engine(.missing)),
                        ModelNotice(title: "VoiceType: model not found",
                                    body: "Model file not found at \(path). Run `\(command)` to download it.",
@@ -150,6 +151,24 @@ final class AppReadinessTests: XCTestCase {
                                    log: "Model load failed: bad"))
         XCTAssertNil(ModelHints.notice(for: .ready, engine: engine(.ready)))
         XCTAssertNil(ModelHints.notice(for: .loading, engine: engine(.loading)))
+    }
+
+    /// An engine whose models aren't files fetched by command (e.g. OS-managed)
+    /// gets its own instructions, and no file path is assumed.
+    func testInstructionHintsReplaceTheFileWording() {
+        let hint = ModelDownloadHint.instructions("Open Settings › Model to download it.")
+        XCTAssertEqual(ReadinessIssue.modelMissing(path: "en-US", download: hint).detail,
+                       "Model missing — Open Settings › Model to download it.")
+        XCTAssertEqual(ReadinessIssue.modelFailed(reason: "x", download: hint).detail, "Model failed to load — see log")
+
+        let missing = EngineReadiness(status: .missing, modelPath: "en-US", download: hint)
+        XCTAssertEqual(ModelHints.notice(for: .missing, engine: missing),
+                       ModelNotice(title: "VoiceType: model not installed",
+                                   body: "Open Settings › Model to download it.",
+                                   log: "Model not installed (en-US). Open Settings › Model to download it."))
+        let failed = EngineReadiness(status: .failed(reason: "bad"), modelPath: "en-US", download: hint)
+        XCTAssertEqual(ModelHints.notice(for: .failed(reason: "bad"), engine: failed)?.body,
+                       "bad Open Settings › Model to download it.")
     }
 
     func testFailedSwitchNoticeSkipsTheRedownloadHint() {
@@ -184,7 +203,7 @@ final class AppReadinessTests: XCTestCase {
 
     func testIssuesAreListedInPriorityOrder() {
         let all = AppReadiness.issues(for: inputs(microphone: .denied, engine: .failed(reason: "r"), tap: .failed))
-        XCTAssertEqual(all, [.microphoneDenied, .modelFailed(reason: "r", downloadCommand: Self.download), .hotkeyTapFailed])
+        XCTAssertEqual(all, [.microphoneDenied, .modelFailed(reason: "r", download: Self.download), .hotkeyTapFailed])
 
         let transient = AppReadiness.issues(for: inputs(engine: .verifying, tap: .notInstalled))
         XCTAssertEqual(transient, [.hotkeysStarting, .modelVerifying])
@@ -212,7 +231,7 @@ final class AppReadinessTests: XCTestCase {
         XCTAssertEqual(AppReadiness.status(for: inputs(microphone: .notDetermined, engine: .missing)),
                        .notReady(.microphoneNotDetermined))
         XCTAssertEqual(AppReadiness.status(for: inputs(engine: .missing, tap: .failed)),
-                       .notReady(.modelMissing(path: Self.modelPath, downloadCommand: Self.download)))
+                       .notReady(.modelMissing(path: Self.modelPath, download: Self.download)))
     }
 
     // MARK: - Monitor: emission
@@ -494,7 +513,7 @@ final class AppReadinessTests: XCTestCase {
 
         monitor.engineChanged(engine(.failed(reason: "boom")))
         monitor.engineChanged(engine(.failed(reason: "boom")))
-        XCTAssertEqual(changes.last, .notReady(.modelFailed(reason: "boom", downloadCommand: Self.download)))
+        XCTAssertEqual(changes.last, .notReady(.modelFailed(reason: "boom", download: Self.download)))
         XCTAssertEqual(changes.count, 3)
         XCTAssertEqual(nextPollIn, 2)
 
@@ -506,8 +525,8 @@ final class AppReadinessTests: XCTestCase {
         startMonitor(engine: .missing)
         monitor.engineChanged(engine(.failed(reason: "corrupt")))
         XCTAssertEqual(changes, [
-            .notReady(.modelMissing(path: Self.modelPath, downloadCommand: Self.download)),
-            .notReady(.modelFailed(reason: "corrupt", downloadCommand: Self.download)),
+            .notReady(.modelMissing(path: Self.modelPath, download: Self.download)),
+            .notReady(.modelFailed(reason: "corrupt", download: Self.download)),
         ])
     }
 

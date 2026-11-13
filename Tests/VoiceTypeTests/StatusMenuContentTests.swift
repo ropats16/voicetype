@@ -11,7 +11,7 @@ final class StatusMenuContentTests: XCTestCase {
                          configIssues: [ConfigIssue] = []) -> StatusMenuContent {
         let inputs = ReadinessInputs(
             accessibility: accessibility, microphone: microphone,
-            engine: EngineReadiness(status: engine, modelPath: "/m.bin", downloadCommand: "make model"),
+            engine: EngineReadiness(status: engine, modelPath: "/m.bin", download: .command("make model")),
             hotkeyTap: .installed)
         return StatusMenuContent(status: status, inputs: inputs, hold: "⌃⇧", toggle: "⌃⌥Space",
                                  configIssues: configIssues)
@@ -51,8 +51,8 @@ final class StatusMenuContentTests: XCTestCase {
     }
 
     func testModelMissingAndFailedAreDistinct() {
-        let missing = content(.notReady(.modelMissing(path: "/m.bin", downloadCommand: "make model")))
-        let failed = content(.notReady(.modelFailed(reason: "checksum mismatch", downloadCommand: "make model")))
+        let missing = content(.notReady(.modelMissing(path: "/m.bin", download: .command("make model"))))
+        let failed = content(.notReady(.modelFailed(reason: "checksum mismatch", download: .command("make model"))))
 
         XCTAssertEqual(missing.header, "VoiceType — Model missing")
         XCTAssertEqual(missing.reason?.title, "Model missing — run `make model`")
@@ -73,7 +73,7 @@ final class StatusMenuContentTests: XCTestCase {
     }
 
     func testModelHintIsNotRepeatedWhenItIsTheReason() {
-        let issue = ReadinessIssue.modelMissing(path: "/m.bin", downloadCommand: "make model")
+        let issue = ReadinessIssue.modelMissing(path: "/m.bin", download: .command("make model"))
         let menu = content(.notReady(issue), engine: .missing)
         XCTAssertEqual(menu.reason?.title, issue.detail)
         XCTAssertNil(menu.modelHint)

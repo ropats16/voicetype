@@ -25,10 +25,10 @@ enum ReadinessIssue: Equatable {
     case microphoneDenied
     case microphoneRestricted
     case microphoneNotDetermined
-    case modelMissing(path: String, downloadCommand: String?)
+    case modelMissing(path: String, download: ModelDownloadHint?)
     /// The file exists but wouldn't load, including a checksum mismatch
     /// (`reason` says which).
-    case modelFailed(reason: String, downloadCommand: String?)
+    case modelFailed(reason: String, download: ModelDownloadHint?)
     case hotkeyTapFailed
     /// Transient: Accessibility is granted and the tap is about to be installed.
     case hotkeysStarting
@@ -71,10 +71,10 @@ enum ReadinessIssue: Equatable {
             return "Microphone access is restricted on this Mac (e.g. by a profile)."
         case .microphoneNotDetermined:
             return "Allow VoiceType to use the microphone."
-        case .modelMissing(_, let command):
-            return ModelHints.missing(downloadCommand: command)
-        case .modelFailed(_, let command):
-            return ModelHints.failed(downloadCommand: command)
+        case .modelMissing(_, let download):
+            return ModelHints.missing(download: download)
+        case .modelFailed(_, let download):
+            return ModelHints.failed(download: download)
         case .hotkeyTapFailed:
             return "Couldn't install the hotkey listener; retrying. Re-granting Accessibility usually fixes it."
         case .hotkeysStarting:
@@ -164,9 +164,9 @@ enum AppReadiness {
 
         switch engine.status {
         case .missing:
-            issues.append(.modelMissing(path: engine.modelPath, downloadCommand: engine.downloadCommand))
+            issues.append(.modelMissing(path: engine.modelPath, download: engine.download))
         case .failed(let reason):
-            issues.append(.modelFailed(reason: reason, downloadCommand: engine.downloadCommand))
+            issues.append(.modelFailed(reason: reason, download: engine.download))
         case .notLoaded, .verifying, .loading, .ready:
             break
         }

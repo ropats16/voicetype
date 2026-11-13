@@ -172,7 +172,7 @@ final class DictationSessionTests: XCTestCase {
     }
 
     func testRepeatedBlockedPressesNotifyOncePerWindow() {
-        status = .notReady(.modelMissing(path: "/m.bin", downloadCommand: nil))
+        status = .notReady(.modelMissing(path: "/m.bin", download: nil))
         session.handle(.toggle)
         session.handle(.toggle)
         clock.advance(by: DictationSession.noticeInterval - 0.1)
@@ -191,7 +191,7 @@ final class DictationSessionTests: XCTestCase {
     func testADifferentIssueIsNoticedAtOnce() {
         status = Self.micDenied
         session.handle(.toggle)
-        status = .notReady(.modelMissing(path: "/m.bin", downloadCommand: nil))
+        status = .notReady(.modelMissing(path: "/m.bin", download: nil))
         session.handle(.toggle)
         XCTAssertEqual(feedback.notifications, ["VoiceType — Needs Microphone", "VoiceType — Model missing"])
     }
