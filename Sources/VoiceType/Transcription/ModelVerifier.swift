@@ -68,24 +68,33 @@ final class ModelVerifier: @unchecked Sendable {
     /// Throws `ModelChecksumMismatch` unless the file at `path` hashes to
     /// `expected` (or a file-read error if it can't be read). `willHash` runs
     /// first if the file must actually be hashed (not in the cache), so the
-    /// caller can say so.
+    /// caller can say so. A directory is a folder model, checked through its
+    /// manifest (`verifyFolder`).
     func verify(path: String, sha256 expected: String, willHash: () -> Void = {}) throws {
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue {
+            return try verifyFolder(path: path, manifestSHA256: expected, willHash: willHash)
+        }
+        let actual = try cachedSHA256(of: path, willHash: willHash)
+        guard actual.lowercased() == expected.lowercased() else {
+            throw ModelChecksumMismatch(filename: URL(fileURLWithPath: path).lastPathComponent)
+        }
+    }
+
+    /// The file's SHA-256: from the cache while the file is unchanged, else
+    /// hashed (after `willHash`) and cached.
+    func cachedSHA256(of path: String, willHash: () -> Void) throws -> String {
         let url = URL(fileURLWithPath: path)
         let stamp = try Stamp(path: path)
-
-        let actual: String
         if let cached = lock.withLock({ loadedCache()[path] }), cached.stamp == stamp {
-            actual = cached.sha256
-        } else {
-            willHash()
-            let start = Date()
-            actual = try hash(url)
-            Log.info("Checksummed \(url.lastPathComponent) in \(String(format: "%.1f", Date().timeIntervalSince(start)))s.")
-            lock.withLock { store(Entry(stamp: stamp, sha256: actual), for: path) }
+            return cached.sha256
         }
-        guard actual.lowercased() == expected.lowercased() else {
-            throw ModelChecksumMismatch(filename: url.lastPathComponent)
-        }
+        willHash()
+        let start = Date()
+        let actual = try hash(url)
+        Log.info("Checksummed \(url.lastPathComponent) in \(String(format: "%.1f", Date().timeIntervalSince(start)))s.")
+        lock.withLock { store(Entry(stamp: stamp, sha256: actual), for: path) }
+        return actual
     }
 
     /// Streams the file through SHA-256 in 4 MB chunks, so memory stays flat.
