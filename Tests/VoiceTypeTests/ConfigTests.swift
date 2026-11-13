@@ -28,12 +28,22 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(c.language, "en")
     }
 
+    /// #15: a config without an `engine` key goes Automatic, unless it
+    /// hand-picked a whisper model — then it stays on whisper.
+    func testEngineKeyDefaultsRespectAnOlderWhisperPick() throws {
+        XCTAssertEqual(try decode("{}").engine, EngineChoice.automaticID)
+        XCTAssertEqual(try decode(#"{"modelPath": "/m/ggml-medium.en.bin"}"#).engine, "whisper")
+        XCTAssertEqual(try decode(#"{"model": "small.en-q5_1"}"#).engine, "whisper")
+        XCTAssertEqual(try decode(#"{"model": "auto"}"#).engine, EngineChoice.automaticID)
+        XCTAssertEqual(try decode(#"{"engine": "parakeet", "modelPath": "/m/x.bin"}"#).engine, "parakeet")
+    }
+
     func testAnOlderConfigKeepsItsModelPath() throws {
         // What earlier versions (and setup.sh) wrote: modelPath, no model key.
         let old = "/Users/me/Library/Application Support/VoiceType/models/ggml-medium.en.bin"
         let c = try decode(#"{"modelPath": "\#(old)", "language": "en", "threads": 0}"#)
         XCTAssertEqual(c.modelPath, old)
-        XCTAssertEqual(c.engineChoice, .automatic, "No engine key: Automatic")
+        XCTAssertEqual(c.engineChoice, .engine(.whisper), "No engine key + a hand-set file: stays on whisper")
         // Whenever whisper runs (always on Intel), the file beats its auto-pick.
         let spec = ModelSelection.resolve(c, hardware: HardwareProfile(isAppleSilicon: false, memoryBytes: 8 << 30),
                                           presentFilenames: [])

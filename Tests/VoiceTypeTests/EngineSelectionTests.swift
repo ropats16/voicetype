@@ -22,9 +22,11 @@ final class EngineSelectionTests: XCTestCase {
     // MARK: - Config
 
     func testAConfigWithoutAnEngineIsAutomatic() throws {
+        XCTAssertEqual(try decode("{}").engineChoice, .automatic)
+        // A named whisper model without an engine key was a whisper pick.
         let config = try decode(#"{"model": "small.en-q5_1"}"#)
-        XCTAssertEqual(config.engine, "auto")
-        XCTAssertEqual(config.engineChoice, .automatic)
+        XCTAssertEqual(config.engine, "whisper")
+        XCTAssertEqual(config.engineChoice, .engine(.whisper))
         XCTAssertEqual(Config.defaults.engineChoice, .automatic)
         XCTAssertEqual(config.engineModels, [:])
         XCTAssertEqual(config.modelChoice(for: .whisper), .named("small.en-q5_1"))

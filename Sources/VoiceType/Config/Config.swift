@@ -81,9 +81,14 @@ struct Config: Codable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = Config.defaults
-        engine = try c.decodeIfPresent(String.self, forKey: .engine) ?? d.engine
         model = try c.decodeIfPresent(ModelChoice.self, forKey: .model) ?? d.model
         modelPath = try c.decodeIfPresent(String.self, forKey: .modelPath) ?? d.modelPath
+        // A pre-engine config that hand-picked a whisper model (a `modelPath`
+        // or a named `model`) chose whisper; keep it there rather than moving
+        // it to whatever Automatic picks. Untouched configs get Automatic.
+        let pickedWhisper = !modelPath.isEmpty || model != .automatic
+        engine = try c.decodeIfPresent(String.self, forKey: .engine)
+            ?? (pickedWhisper ? EngineKind.whisper.rawValue : d.engine)
         engineModels = try c.decodeIfPresent([String: ModelChoice].self, forKey: .engineModels) ?? d.engineModels
         hold = try c.decodeIfPresent(KeyBinding.self, forKey: .hold) ?? d.hold
         toggle = try c.decodeIfPresent(KeyBinding.self, forKey: .toggle) ?? d.toggle
