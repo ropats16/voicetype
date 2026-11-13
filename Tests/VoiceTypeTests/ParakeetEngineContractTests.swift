@@ -72,7 +72,7 @@ final class ParakeetEngineContractTests: XCTestCase {
         }
         engine.load()
         let deadline = Date().addingTimeInterval(60)
-        while [.loading, .verifying].contains(engine.status), Date() < deadline {
+        while [.notLoaded, .loading, .verifying].contains(engine.status), Date() < deadline {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         guard case .failed = engine.status else { return XCTFail("Expected failed, got \(engine.status)") }
