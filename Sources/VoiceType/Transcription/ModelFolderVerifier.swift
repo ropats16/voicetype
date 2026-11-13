@@ -1,12 +1,13 @@
 import Foundation
 
-/// Folder models (WhisperKit's Core ML folders: many files, not one). The
-/// download writes a manifest into the folder — `shasum -a 256` lines, one per
-/// file, sorted by path — and the catalog pins the manifest's own SHA-256. So
-/// one pinned digest covers every file: the manifest must hash to it, then
-/// each file it lists must hash to its line. Files outside the manifest are
-/// ignored. Each file goes through the same stamp cache as a single-file
-/// model, so an unchanged folder is never re-hashed.
+/// Folder models (WhisperKit's and Parakeet's Core ML folders: many files,
+/// not one; see `FolderModelCatalog`). The download writes a manifest into the
+/// folder — `shasum -a 256` lines, one per file, sorted by path — and the
+/// catalog pins the manifest's own SHA-256. So one pinned digest covers every
+/// file: the manifest must hash to it, then each file it lists must hash to
+/// its line. Files outside the manifest are ignored. Each file goes through
+/// the same stamp cache as a single-file model, so an unchanged folder is
+/// never re-hashed.
 extension ModelVerifier {
     /// The manifest's name inside a folder model.
     static let folderManifestName = "voicetype-manifest.sha256"

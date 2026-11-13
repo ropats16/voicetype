@@ -18,13 +18,14 @@ final class ParakeetEngineTests: XCTestCase {
         XCTAssertEqual(engine.kind.displayName, "Turbo (English/EU)")
     }
 
-    func testAutomaticAndNamedResolveToTheCatalogFolder() {
-        let expected = ModelSpec(path: "/tmp/vt/models/parakeet/parakeet-tdt-0.6b-v3", sha256: nil,
-                                 language: "de", engine: .parakeet)
+    func testAutomaticAndNamedResolveToTheCatalogFolderWithThePinnedManifest() {
+        let expected = ModelSpec(path: "/tmp/vt/models/parakeet/parakeet-tdt-0.6b-v3",
+                                 sha256: ParakeetCatalog.defaultModel.manifestSHA256, language: "de", engine: .parakeet)
         XCTAssertEqual(engine.resolve(.automatic, in: context("de")), expected)
         XCTAssertEqual(engine.resolve(.named("parakeet-tdt-0.6b-v3"), in: context("de")), expected)
-        // A hand-edited id still resolves (and then reports missing).
-        XCTAssertEqual(engine.resolve(.named("parakeet-x"), in: context()).path, "/tmp/vt/models/parakeet/parakeet-x")
+        // A hand-edited id still resolves, unverified (and then reports missing).
+        XCTAssertEqual(engine.resolve(.named("parakeet-x"), in: context()),
+                       ModelSpec(path: "/tmp/vt/models/parakeet/parakeet-x", sha256: nil, language: "en", engine: .parakeet))
         XCTAssertEqual(engine.models.map(\.id), ["parakeet-tdt-0.6b-v3"])
     }
 
@@ -55,30 +56,32 @@ final class ParakeetEngineTests: XCTestCase {
     func testDownloadHintAndCommandLineModel() {
         let spec = engine.resolve(.automatic, in: context())
         XCTAssertEqual(engine.downloadHint(for: spec), .command("make parakeet-model"))
+        XCTAssertNil(engine.downloadHint(for: engine.resolve(.named("my-parakeet"), in: context())),
+                     "a custom folder has nothing to fetch")
+        XCTAssertEqual(engine.spec(forModelArgument: "/x/parakeet-tdt-0.6b-v3", language: "fr"),
+                       ModelSpec(path: "/x/parakeet-tdt-0.6b-v3", sha256: ParakeetCatalog.defaultModel.manifestSHA256,
+                                 language: "fr", engine: .parakeet))
         XCTAssertEqual(engine.spec(forModelArgument: "/x/my-parakeet", language: "fr"),
                        ModelSpec(path: "/x/my-parakeet", sha256: nil, language: "fr", engine: .parakeet))
         XCTAssertEqual(engine.spec(forModelArgument: "/x/y", language: "").language, ModelSpec.autoDetect)
     }
 
-    /// A catalog folder missing a file is missing (so the user gets the
-    /// download hint), not a failed load; a custom folder only has to exist.
-    func testPresenceChecksEveryCatalogFile() throws {
+    /// A catalog folder counts once its manifest is there (the download
+    /// writes it last, then renames the folder into place), so a partial copy
+    /// shows the download hint rather than a failed load; hashing is the
+    /// load's job. A custom folder only has to exist.
+    func testACatalogFolderIsPresentOnlyWithItsManifest() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
         let spec = engine.resolve(.automatic, in: context(modelsDir: dir))
         XCTAssertFalse(engine.isPresent(spec))
 
-        let folder = URL(fileURLWithPath: spec.path)
-        for file in ParakeetCatalog.defaultModel.files.dropLast() {
-            let url = folder.appendingPathComponent(file.path)
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try Data().write(to: url)
-        }
-        XCTAssertFalse(engine.isPresent(spec), "one file short")
-        let last = folder.appendingPathComponent(ParakeetCatalog.defaultModel.files.last!.path)
-        try FileManager.default.createDirectory(at: last.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data().write(to: last)
-        XCTAssertTrue(engine.isPresent(spec), "presence only; checksums are the load's job")
+        try FileManager.default.createDirectory(atPath: spec.path, withIntermediateDirectories: true)
+        try Data().write(to: URL(fileURLWithPath: spec.path).appendingPathComponent("parakeet_vocab.json"))
+        XCTAssertFalse(engine.isPresent(spec), "a partial folder is missing, not failed")
+
+        try Data().write(to: URL(fileURLWithPath: spec.path).appendingPathComponent(ModelVerifier.folderManifestName))
+        XCTAssertTrue(engine.isPresent(spec))
         XCTAssertEqual(engine.installedModelIDs(in: context(modelsDir: dir)), ["parakeet-tdt-0.6b-v3"])
 
         let custom = dir.appendingPathComponent("my-parakeet")

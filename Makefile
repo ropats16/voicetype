@@ -18,9 +18,9 @@
 APP   := VoiceType
 # Empty = the model the app auto-picks for this Mac (scripts/model_catalog.sh).
 MODEL ?=
-# Empty = scripts/parakeet_catalog.sh's default (parakeet-tdt-0.6b-v3).
+# Empty = scripts/download_parakeet_model.sh's default (the app's Parakeet model).
 PARAKEET ?=
-# Empty = scripts/download_whisperkit_model.sh's default (small.en_217MB).
+# Empty = scripts/download_whisperkit_model.sh's default (the app's English Automatic pick).
 WHISPERKIT ?=
 
 .PHONY: setup embed model vad-model parakeet-model whisperkit-model build run package install clean

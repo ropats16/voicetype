@@ -2,23 +2,26 @@ import XCTest
 @testable import VoiceType
 
 /// Contract test for the Parakeet adapter, through the registry and the
-/// engine exactly as the app runs it, against the real v3 model folder.
-/// Skipped when it's absent (fetch it with `make parakeet-model`).
+/// engine exactly as the app runs it (manifest check, load, warm-up), against
+/// the real v3 model folder. Skipped when it's absent (fetch it with
+/// `make parakeet-model`).
 final class ParakeetEngineContractTests: XCTestCase {
 
     private let model = ParakeetCatalog.defaultModel
 
+    /// The installed folder, as the app resolves it: verified against its
+    /// pinned manifest.
     private func spec(language: String = "en") -> ModelSpec {
-        ModelSpec(path: model.folder().path, sha256: nil, language: language, engine: .parakeet)
+        ParakeetEngine().resolve(.automatic, in: ModelContext(language: language, hardware: .current,
+                                                              modelsDir: Paths.modelsDir, presentFilenames: []))
     }
 
     /// In-memory checksum cache: keeps these tests from writing the user's.
-    private func makeEngine(language: String = "en") throws -> TranscriptionEngine {
-        let spec = spec(language: language)
+    private func makeEngine(_ spec: ModelSpec, makeAdapter: @escaping (ModelSpec) throws -> TranscriptionAdapter
+                                = TranscriptionEngine.parakeetAdapter()) throws -> TranscriptionEngine {
         try XCTSkipUnless(ParakeetEngine().isPresent(spec), "\(model.id) not downloaded")
         return TranscriptionEngine(model: spec, verifier: ModelVerifier(cacheURL: nil),
-                                   isPresent: ParakeetEngine().isPresent,
-                                   makeAdapter: TranscriptionEngine.parakeetAdapter(verifier: ModelVerifier(cacheURL: nil)))
+                                   isPresent: ParakeetEngine().isPresent, makeAdapter: makeAdapter)
     }
 
     func testTranscribesJFK() async throws {
@@ -38,7 +41,7 @@ final class ParakeetEngineContractTests: XCTestCase {
     /// Clips under FluidAudio's 0.3 s minimum (a tap of the hotkey), and
     /// empty ones, transcribe instead of throwing.
     func testVeryShortClipsDoNotFail() async throws {
-        let engine = try makeEngine(language: ModelSpec.autoDetect)
+        let engine = try makeEngine(spec())
         engine.load()
         let empty = try await engine.transcribe([])
         XCTAssertEqual(empty.segments, [])
@@ -49,7 +52,7 @@ final class ParakeetEngineContractTests: XCTestCase {
     /// A specific language passes FluidAudio's script hint; decoding still
     /// works (JFK is English, but Latin script like German).
     func testLanguageHintStillTranscribes() async throws {
-        let engine = try makeEngine(language: "de")
+        let engine = try makeEngine(spec(language: "de"))
         try XCTSkipUnless(FileManager.default.fileExists(atPath: EngineContract.jfkPath), "jfk.wav fixture not present")
         engine.load()
         let transcript = try await engine.transcribe(try EngineContract.loadMono16k(EngineContract.jfkPath))
@@ -57,16 +60,22 @@ final class ParakeetEngineContractTests: XCTestCase {
         XCTAssertFalse(transcript.text.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
-    /// A catalog folder with a missing file fails the load with a clear
-    /// reason; nothing is fetched from the network.
-    func testIncompleteFolderFailsTheLoad() throws {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString).appendingPathComponent(model.id)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent()) }
-        let make = TranscriptionEngine.parakeetAdapter(verifier: ModelVerifier(cacheURL: nil))
-        XCTAssertThrowsError(try make(ModelSpec(path: dir.path, sha256: nil, language: "en", engine: .parakeet))) {
-            XCTAssertTrue($0 is ParakeetModelIncomplete, "\($0)")
+    /// A folder that doesn't match its pinned manifest fails verification and
+    /// is never loaded.
+    func testATamperedFolderFailsVerification() async throws {
+        var spec = spec()
+        spec.sha256 = String(repeating: "0", count: 64)
+        var loads = 0
+        let engine = try makeEngine(spec) { _ in
+            loads += 1
+            throw TranscriptionError.modelLoadFailed(path: spec.path)
         }
+        engine.load()
+        let deadline = Date().addingTimeInterval(60)
+        while [.loading, .verifying].contains(engine.status), Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        guard case .failed = engine.status else { return XCTFail("Expected failed, got \(engine.status)") }
+        XCTAssertEqual(loads, 0)
     }
 }

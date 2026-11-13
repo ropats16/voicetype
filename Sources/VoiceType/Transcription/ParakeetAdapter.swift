@@ -2,32 +2,11 @@ import Foundation
 import FluidAudio
 
 extension TranscriptionEngine {
-    /// An engine on Parakeet TDT v3 (Core ML, via FluidAudio) behind the
-    /// engine's load, warm-up, job queue and live model switching. `model.path`
-    /// is a model folder (`ParakeetModel.folder()`) and `model.sha256` nil:
-    /// the adapter verifies a catalog folder file by file itself.
-    static func parakeet(model: ModelSpec, idleUnloadAfter: TimeInterval? = nil) -> TranscriptionEngine {
-        TranscriptionEngine(model: model, idleUnloadAfter: idleUnloadAfter, makeAdapter: parakeetAdapter())
-    }
-
-    /// The adapter factory `parakeet(...)` uses, for callers (the bench) that
-    /// build their own engine around it. A folder named like a catalog model
-    /// (`ParakeetCatalog.model(forFolder:)`) must match its pinned files
-    /// (checked with `verifier`, whose cache makes later loads cheap); any
-    /// other folder loads unverified, like a custom whisper file.
-    static func parakeetAdapter(verifier: ModelVerifier = .shared) -> (ModelSpec) throws -> TranscriptionAdapter {
-        { spec in
-            let folder = URL(fileURLWithPath: spec.path, isDirectory: true)
-            if let model = ParakeetCatalog.model(forFolder: spec.path) {
-                let start = Date()
-                var hashed = false
-                try model.verify(folder: folder, verifier: verifier) { hashed = true }
-                if hashed {
-                    Log.info("Checksummed \(model.id) in \(String(format: "%.1f", Date().timeIntervalSince(start)))s.")
-                }
-            }
-            return try ParakeetAdapter(folder: folder, language: spec.language)
-        }
+    /// `ParakeetEngine`'s model → adapter factory: `spec.path` is a model
+    /// folder, already verified by the engine against its manifest digest
+    /// (`spec.sha256`) when it's a catalog folder.
+    static func parakeetAdapter() -> (ModelSpec) throws -> TranscriptionAdapter {
+        { spec in try ParakeetAdapter(folder: URL(fileURLWithPath: spec.path, isDirectory: true), language: spec.language) }
     }
 }
 

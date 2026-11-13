@@ -114,3 +114,15 @@ struct EngineNotInBuild: LocalizedError {
     let kind: EngineKind
     var errorDescription: String? { "\(kind.displayName) isn't in this build." }
 }
+
+extension TranscriptionEngine {
+    /// The app's engine: each `ModelSpec` loads through its own engine's
+    /// adapter (`EngineRegistry.makeAdapter`), so Settings switches engine
+    /// live with `switchModel(to:)`, and `.missing` follows that engine's
+    /// `isPresent`.
+    static func registered(model: ModelSpec, options: EngineOptions, engines: EngineRegistry = .shared,
+                           idleUnloadAfter: TimeInterval? = nil) -> TranscriptionEngine {
+        TranscriptionEngine(model: model, idleUnloadAfter: idleUnloadAfter, isPresent: engines.isPresent,
+                            makeAdapter: engines.makeAdapter(options))
+    }
+}

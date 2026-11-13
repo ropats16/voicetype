@@ -2,7 +2,7 @@ import Foundation
 
 /// One downloadable WhisperKit model: a folder of Core ML models (`.mlmodelc`)
 /// plus the matching OpenAI tokenizer, pinned file by file.
-struct WhisperKitModel: Hashable, Identifiable {
+struct WhisperKitModel: FolderModel, Hashable, Identifiable {
     /// The local folder name: the Hugging Face folder minus `openai_whisper-`,
     /// e.g. `small.en_217MB`. What `make whisperkit-model WHISPERKIT=` takes.
     let id: String
@@ -28,7 +28,8 @@ struct WhisperKitModel: Hashable, Identifiable {
 /// for `scripts/download_whisperkit_model.sh`; `WhisperKitCatalogTests`
 /// checks it adds up to the digests here. Regenerate both with
 /// `scripts/pin_whisperkit_models.py`.
-enum WhisperKitCatalog {
+enum WhisperKitCatalog: FolderModelCatalog {
+    static let subdirectory = "whisperkit"
     static let repo = "argmaxinc/whisperkit-coreml"
     static let revision = "0f63a7800b00dd0226abd051b906c246e1907482"
 
@@ -54,41 +55,10 @@ enum WhisperKitCatalog {
                         manifestSHA256: "e9d304611180d0e8cb353710b5426afce980427aec0f3b054a2002249e0561a6"),
     ]
 
-    static func model(id: String) -> WhisperKitModel? {
-        models.first { $0.id == id }
-    }
-
-    /// The catalog model whose id is the folder's name (wherever it lives).
-    static func model(forFolder path: String) -> WhisperKitModel? {
-        guard !path.isEmpty else { return nil }
-        return model(id: URL(fileURLWithPath: path).lastPathComponent)
-    }
-
     /// The Automatic pick: the compressed small.en for English (a dictation-
     /// speed model, 220 MB); the compressed large-v3-turbo for any other
     /// language or auto-detect, where small multilingual models are weak.
     static func defaultModel(language: String) -> WhisperKitModel {
         model(id: ModelCatalog.isEnglish(language) ? "small.en_217MB" : "large-v3-v20240930_626MB")!
-    }
-
-    /// `<models>/whisperkit/`, beside the whisper.cpp files.
-    static func directory(in modelsDir: URL = Paths.modelsDir) -> URL {
-        modelsDir.appendingPathComponent("whisperkit", isDirectory: true)
-    }
-
-    /// Where model `id` is downloaded to: `<models>/whisperkit/<id>/`.
-    static func folder(for id: String, in modelsDir: URL = Paths.modelsDir) -> URL {
-        directory(in: modelsDir).appendingPathComponent(id, isDirectory: true)
-    }
-
-    static func folder(for model: WhisperKitModel, in modelsDir: URL = Paths.modelsDir) -> URL {
-        folder(for: model.id, in: modelsDir)
-    }
-
-    /// What the engine loads for `model`: its folder, checked against the
-    /// pinned manifest digest (the engine's `ModelVerifier` handles folders).
-    static func spec(for model: WhisperKitModel, language: String, in modelsDir: URL = Paths.modelsDir) -> ModelSpec {
-        ModelSpec(path: folder(for: model, in: modelsDir).path, sha256: model.manifestSHA256,
-                  language: language, engine: .whisperKit)
     }
 }

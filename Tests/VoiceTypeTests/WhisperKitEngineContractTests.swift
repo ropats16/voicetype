@@ -9,7 +9,12 @@ import XCTest
 final class WhisperKitEngineContractTests: XCTestCase {
 
     private let model = WhisperKitCatalog.model(id: "tiny.en")!
-    private var spec: ModelSpec { WhisperKitCatalog.spec(for: model, language: "en") }
+    /// The installed folder, as the app resolves it: verified against its
+    /// pinned manifest.
+    private var spec: ModelSpec {
+        WhisperKitEngine().resolve(.named(model.id), in: ModelContext(language: "en", hardware: .current,
+                                                                      modelsDir: Paths.modelsDir, presentFilenames: []))
+    }
 
     func testTranscribesJFK() async throws {
         let transcript = try await EngineContract.assertTranscribesJFK(spec)
