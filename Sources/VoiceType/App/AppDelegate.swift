@@ -8,13 +8,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let permissions = Permissions()
     private let loginItem = LoginItem()
 
-    /// The model comes from the config (explicit pick, else auto-picked for
-    /// this Mac); Settings changes are applied live by `applyModelSettings()`.
-    private lazy var engine: TranscriptionEngine = .whisper(
+    /// The engine and model come from the config (the configured engine if it
+    /// can run here, else whisper; an explicit pick, else auto-picked for this
+    /// Mac); Settings changes are applied live by `applyModelSettings()`.
+    private lazy var engine: TranscriptionEngine = .registered(
         model: resolvedModel(),
-        threads: configStore.config.threads,
+        options: EngineOptions(threads: configStore.config.threads),
         idleUnloadAfter: idleUnloadAfter()
     )
+    /// The last engine-fallback note logged, so a re-resolve doesn't repeat it.
+    private var loggedFallback: String?
     /// Mic capture. The mic and max duration are read live, so a Settings change
     /// applies to the next recording.
     private lazy var capture = AudioCapture(
@@ -140,12 +143,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startEngine() {
         engine.onStatusChange = { [weak self] status in self?.engineStatusChanged(status) }
-        Log.info("Model: \(engine.model.path) (language \(engine.model.language)); auto-pick for this Mac: \(ModelCatalog.recommended(for: .current).id).")
+        Log.info("Engine: \(engine.model.engine.displayName). Model: \(engine.model.path) (language \(engine.model.language)); whisper auto-pick for this Mac: \(ModelCatalog.recommended(for: .current).id).")
         engine.load()
     }
 
     private func resolvedModel() -> ModelSpec {
-        ModelSelection.resolve(configStore.config, presentFilenames: ModelSelection.presentFilenames())
+        let selected = ModelSelection.select(configStore.config, presentFilenames: ModelSelection.presentFilenames())
+        if selected.note != loggedFallback, let note = selected.note { Log.info(note) }
+        loggedFallback = selected.note
+        return selected.spec
     }
 
     private func idleUnloadAfter() -> TimeInterval? {

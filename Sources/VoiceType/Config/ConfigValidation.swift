@@ -12,8 +12,11 @@ struct ConfigIssue: Equatable {
 /// the app can report them clearly at startup. It never mutates the config; it
 /// only inspects and returns an ordered list of problems (errors first, then
 /// warnings). The per-binding rules live in `KeyBinding`; this only phrases them.
+/// It also warns about an `engine` that can't run here (`engines` and
+/// `environment` are injectable for tests); the app runs whisper meanwhile.
 enum ConfigValidator {
-    static func validate(_ config: Config) -> [ConfigIssue] {
+    static func validate(_ config: Config, engines: EngineRegistry = .shared,
+                         environment: EngineEnvironment = .current) -> [ConfigIssue] {
         var issues: [ConfigIssue] = []
 
         // error — hold and toggle resolve to the same chord, so both modes
@@ -58,6 +61,15 @@ enum ConfigValidator {
             issues.append(ConfigIssue(
                 severity: .warning,
                 message: "`toggle` has unknown modifier \"\(name)\"; it will be ignored."))
+        }
+
+        // warning — an engine that's unknown, not in this build, or can't run
+        // on this Mac. Not a language mismatch: that's a Settings choice, and
+        // Settings explains that fallback itself.
+        if case .unavailable(let reason) = engines.availability(ofID: config.engine, in: environment) {
+            issues.append(ConfigIssue(
+                severity: .warning,
+                message: "`engine` \"\(config.engine)\": \(reason); using \(EngineKind.whisper.displayName)."))
         }
 
         return issues

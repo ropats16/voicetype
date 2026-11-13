@@ -73,12 +73,43 @@ enum ModelSelection {
         return file(chosen.id)
     }
 
-    /// Convenience over `resolve` for the app's config.
+    /// What the app runs for a config: the engine it names if that can run
+    /// here (else whisper), and that engine's pick resolved to a `ModelSpec`.
+    struct Selected: Equatable {
+        let spec: ModelSpec
+        /// Why the configured engine isn't the one running (completes "Using
+        /// Whisper because …"); nil when it is.
+        let fallbackReason: String?
+
+        /// "Using Whisper (whisper.cpp) because …", for Settings and the log.
+        var note: String? {
+            fallbackReason.map { "Using \(spec.engine.displayName) because \($0)." }
+        }
+    }
+
+    /// The app's config → the engine and model to load. The engine comes from
+    /// `EngineRegistry.select` (configured engine, or whisper with a reason);
+    /// its descriptor resolves the pick (`Config.modelChoice(for:)`). Pure:
+    /// the Mac, the registry and the models folder's contents are injected.
+    static func select(_ config: Config, environment: EngineEnvironment = .current,
+                       engines: EngineRegistry = .shared, modelsDir: URL = Paths.modelsDir,
+                       presentFilenames: Set<String>) -> Selected {
+        let engine = engines.select(engineID: config.engine, language: config.language, in: environment)
+        let descriptor = engines.descriptor(for: engine.kind) ?? engines.whisper
+        let context = ModelContext(language: config.language, hardware: environment.hardware, modelsDir: modelsDir,
+                                   presentFilenames: presentFilenames,
+                                   customPath: descriptor.kind == .whisper ? config.modelPath : "")
+        return Selected(spec: descriptor.resolve(config.modelChoice(for: descriptor.kind), in: context),
+                        fallbackReason: engine.fallbackReason)
+    }
+
+    /// `select(...).spec` on this Mac's OS with `hardware`.
     static func resolve(_ config: Config, hardware: HardwareProfile = .current,
                         modelsDir: URL = Paths.modelsDir,
                         presentFilenames: Set<String>) -> ModelSpec {
-        resolve(model: config.model, modelPath: config.modelPath, language: config.language,
-                hardware: hardware, modelsDir: modelsDir, presentFilenames: presentFilenames)
+        var environment = EngineEnvironment.current
+        environment.hardware = hardware
+        return select(config, environment: environment, modelsDir: modelsDir, presentFilenames: presentFilenames).spec
     }
 
     /// How long the engine waits idle before unloading the model, or nil to
