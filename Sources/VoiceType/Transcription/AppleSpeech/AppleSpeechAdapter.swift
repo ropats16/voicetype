@@ -68,7 +68,7 @@ enum AppleSpeechError: LocalizedError, Equatable {
 /// macOS 26). Inference runs in an OS speech service, not in this process.
 ///
 /// Each job is one finite analysis: the clip is converted to the transcriber's
-/// format, fed whole, and finalized; final results only, with per-word times.
+/// format, streamed in 1 s buffers, and finalized; final results only, with per-word times.
 /// The API is async; `transcribe` blocks the engine's queue on it with a
 /// deadline (`BlockingAsync`). The model is retained for the process's
 /// lifetime once used (the engine's warm-up), and released when the adapter
@@ -143,7 +143,7 @@ final class AppleSpeechAdapter: TranscriptionAdapter {
             return pieces
         }
         let (input, feed) = AsyncStream.makeStream(of: AnalyzerInput.self)
-        feed.yield(AnalyzerInput(buffer: buffer))
+        for chunk in try chunks(of: buffer) { feed.yield(AnalyzerInput(buffer: chunk)) }
         feed.finish()
 
         return try await withTaskCancellationHandler {
@@ -162,6 +162,27 @@ final class AppleSpeechAdapter: TranscriptionAdapter {
         } onCancel: {
             collector.cancel()
             Task { await analyzer.cancelAndFinishNow() }
+        }
+    }
+
+    /// `buffer` in consecutive pieces of at most `seconds`. Fed one whole long
+    /// buffer, the transcriber keeps only its last ~2.5 minutes and drops the
+    /// rest without an error; fed as a stream (like a live mic) it hears it all.
+    static func chunks(of buffer: AVAudioPCMBuffer, seconds: Double = 1) throws -> [AVAudioPCMBuffer] {
+        let format = buffer.format
+        let size = max(1, Int(format.sampleRate * seconds))
+        let bytesPerFrame = Int(format.streamDescription.pointee.mBytesPerFrame)
+        let source = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
+        return try stride(from: 0, to: Int(buffer.frameLength), by: size).map { offset in
+            let frames = min(size, Int(buffer.frameLength) - offset)
+            guard let chunk = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)) else {
+                throw AppleSpeechError.audioConversionFailed
+            }
+            chunk.frameLength = AVAudioFrameCount(frames)
+            for (from, to) in zip(source, UnsafeMutableAudioBufferListPointer(chunk.mutableAudioBufferList)) {
+                memcpy(to.mData, from.mData! + offset * bytesPerFrame, frames * bytesPerFrame)
+            }
+            return chunk
         }
     }
 

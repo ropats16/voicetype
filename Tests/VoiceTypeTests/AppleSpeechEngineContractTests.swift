@@ -47,6 +47,21 @@ final class AppleSpeechEngineContractTests: XCTestCase {
         XCTAssertLessThanOrEqual(previousEnd, duration + 0.5, "Timestamps stay within the clip")
     }
 
+    /// Fed as one buffer, the transcriber silently kept only the last ~2.5
+    /// minutes of a long clip; every repeat of the quote must come back.
+    func testTranscribesAllOfALongClip() async throws {
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: wavPath), "jfk.wav fixture not present")
+        let jfk = try loadMono16k(wavPath)
+        let repeats = 30   // 5.5 minutes
+        let engine = try await makeEngine()
+
+        let transcript = try await engine.transcribe(Array([[Float]](repeating: jfk, count: repeats).joined()))
+
+        let mentions = transcript.text.lowercased().components(separatedBy: "country").count - 1
+        XCTAssertEqual(mentions, 2 * repeats, "Got \(transcript.text.count) characters")
+        XCTAssertLessThan(transcript.segments.first?.start ?? .infinity, 1)
+    }
+
     func testSilenceYieldsNoText() async throws {
         let engine = try await makeEngine()
         let transcript = try await engine.transcribe([Float](repeating: 0, count: 16_000 * 3))
