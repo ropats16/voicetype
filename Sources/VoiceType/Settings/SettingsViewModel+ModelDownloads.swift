@@ -79,11 +79,12 @@ extension SettingsViewModel {
         let throttle = ProgressThrottle(total: download.totalBytes)
         let downloader = modelDownloader
         modelDownloads[key] = .downloading(fraction: 0)
+        let progressed: @MainActor (Double) -> Void = { [weak self] in self?.modelDownloadProgressed(key, to: $0) }
         let task = Task { [weak self] in
             do {
                 try await downloader.download(download) { bytes in
                     guard let fraction = throttle.report(bytes) else { return }
-                    Task { @MainActor [weak self] in self?.modelDownloadProgressed(key, to: fraction) }
+                    Task { @MainActor in progressed(fraction) }
                 }
                 self?.modelDownloadFinished(key, at: download.destination)
             } catch where error is CancellationError || Task.isCancelled {
