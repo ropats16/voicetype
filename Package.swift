@@ -200,6 +200,12 @@ let whisperImporterSettings: [SwiftSetting] = [
 let package = Package(
     name: "VoiceType",
     platforms: [.macOS(.v14)],
+    dependencies: [
+        // Parakeet (NVIDIA's TDT ASR) on Core ML, for the Parakeet engine. Pinned
+        // to one minor line; models load from a local folder, never downloaded
+        // at runtime (ParakeetAdapter).
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", .upToNextMinor(from: "0.17.7")),
+    ],
     targets: [
         // C/C++/ObjC target: whisper + ggml (+ Metal backend on arm64), no cmake.
         .target(
@@ -221,7 +227,8 @@ let package = Package(
         ),
         .executableTarget(
             name: "VoiceType",
-            dependencies: ["CWhisper", "CAudioRing"],
+            dependencies: ["CWhisper", "CAudioRing",
+                           .product(name: "FluidAudio", package: "FluidAudio")],
             path: "Sources/VoiceType",
             swiftSettings: whisperImporterSettings,
             linkerSettings: [
