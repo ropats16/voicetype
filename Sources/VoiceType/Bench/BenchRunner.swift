@@ -153,7 +153,7 @@ struct BenchRunner {
 
         let loadStart = clock()
         transcriptionEngine.load()
-        while [.loading, .verifying].contains(transcriptionEngine.status) { try await Task.sleep(nanoseconds: 1_000_000) }
+        while [.notLoaded, .loading, .verifying].contains(transcriptionEngine.status) { try await Task.sleep(nanoseconds: 1_000_000) }
         switch transcriptionEngine.status {
         case .ready: break
         case .missing: throw BenchError.modelMissing(path: model.path)

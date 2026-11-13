@@ -41,7 +41,8 @@ protocol EngineDescriptor {
 
     /// Whether `spec`'s model is installed, so the engine can report
     /// `.missing` (not `.failed`) without trying a load. Default: a file or
-    /// directory exists at `spec.path`. OS-managed engines override it.
+    /// directory exists at `spec.path`. OS-managed engines override it, and
+    /// may block to ask the OS: the engine calls it on its queue, never main.
     func isPresent(_ spec: ModelSpec) -> Bool
 
     /// How the user gets `spec`'s model when it's missing (menu line, notice,

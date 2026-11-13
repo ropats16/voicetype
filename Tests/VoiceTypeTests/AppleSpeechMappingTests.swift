@@ -172,6 +172,20 @@ final class AppleSpeechMappingTests: XCTestCase {
         XCTAssertTrue(text.contains("Settings"))
     }
 
+    /// An OS query that doesn't answer in time leaves the state unknown,
+    /// which must read as missing (download hint, re-checked later), never
+    /// as installed (a load that then fails as `.failed`).
+    func testAnUnansweredAssetQueryIsNotInstalled() {
+        let start = Date()
+        let state = AppleSpeechEngine.assetState(within: 0.05) {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            return .installed
+        }
+        XCTAssertEqual(state, .notInstalled)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1)
+        XCTAssertEqual(AppleSpeechEngine.assetState(within: 5) { .installed }, .installed)
+    }
+
     func testTheModelIsTheLanguageWhateverTheModelArgument() {
         let engine = AppleSpeechEngine()
         XCTAssertEqual(engine.spec(forModelArgument: "anything", language: "de"),

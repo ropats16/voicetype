@@ -35,7 +35,7 @@ enum SelfTest {
                 model: descriptor.spec(forModelArgument: model, language: "en"), options: EngineOptions())
             let loadStart = Date()
             engine.load()
-            while [.loading, .verifying].contains(engine.status) { Thread.sleep(forTimeInterval: 0.01) }
+            while [.notLoaded, .loading, .verifying].contains(engine.status) { Thread.sleep(forTimeInterval: 0.01) }
             switch engine.status {
             case .ready:
                 err("Model loaded and warmed up in \(String(format: "%.2f", Date().timeIntervalSince(loadStart)))s")

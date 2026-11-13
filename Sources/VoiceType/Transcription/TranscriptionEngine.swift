@@ -143,19 +143,21 @@ final class TranscriptionEngine: @unchecked Sendable {
         self.makeAdapter = makeAdapter
     }
 
-    /// Starts loading the model in the background. Status becomes `.missing`
-    /// right away if the model isn't installed (`isPresent`), otherwise `.loading` (with
-    /// `.verifying` while a not-yet-checked file is hashed) until the load
-    /// settles as `.ready` (after the warm-up) or `.failed` (including a
-    /// checksum mismatch, in which case the file is never loaded). Call once.
+    /// Starts loading the model in the background; returns at once. Status
+    /// becomes `.missing` as soon as the presence check (`isPresent`, on the
+    /// engine's queue: it may ask the OS) finds the model isn't installed,
+    /// otherwise `.loading` (with `.verifying` while a not-yet-checked file is
+    /// hashed) until the load settles as `.ready` (after the warm-up) or
+    /// `.failed` (including a checksum mismatch, in which case the file is
+    /// never loaded). Jobs submitted meanwhile wait for it. Call once.
     func load() {
         let spec = lock.withLock { hasStarted = true; return _model }
-        guard isPresent(spec) else {
-            setStatus(.missing)
-            return
+        queue.async { [self] in
+            guard spec == model else { return }   // a switch since supersedes this load
+            guard isPresent(spec) else { return setStatus(.missing) }
+            setStatus(.loading)
+            load(spec, presenceChecked: true)
         }
-        setStatus(.loading)
-        queue.async { [self] in load(spec) }
     }
 
     /// Switches to another model (or language) without a restart. Jobs already
@@ -168,7 +170,8 @@ final class TranscriptionEngine: @unchecked Sendable {
     /// `load()`, it just changes what `load()` will load.
     func switchModel(to spec: ModelSpec) {
         let reload = lock.withLock { () -> Bool in
-            let settled = _status == .ready || _status == .loading || _status == .verifying
+            // `.notLoaded` after `load()`: its load is queued, and loads `_model`.
+            let settled = [.ready, .loading, .verifying, .notLoaded].contains(_status)
             guard spec != _model || !settled else { return false }
             _model = spec
             return hasStarted
@@ -246,10 +249,10 @@ final class TranscriptionEngine: @unchecked Sendable {
     /// the RAM (file present, checksum) run first, so a bad pick never costs
     /// the working model; if the load itself fails, the previous model is
     /// loaded again.
-    private func load(_ spec: ModelSpec) {
+    private func load(_ spec: ModelSpec, presenceChecked: Bool = false) {
         let previous = loadedSpec ?? idleSpec
         defer { noteActivity() }
-        guard isPresent(spec) else {
+        guard presenceChecked || isPresent(spec) else {
             return failSwitch(to: spec, .missing, previous: previous, why: "model not found")
         }
         do {

@@ -84,6 +84,24 @@ final class TranscriptionEngineTests: XCTestCase {
         XCTAssertEqual(seen, [.missing], "No model file is reported as missing, without trying to load")
     }
 
+    /// The presence check may be slow (Apple's asks the OS), and `load()` is
+    /// called on main: it must return at once and check on the engine's queue.
+    func testLoadChecksPresenceOffTheCallingThread() async {
+        let engine = TranscriptionEngine(model: .at(modelURL.path),
+                                         isPresent: { _ in Thread.sleep(forTimeInterval: 0.5); return false },
+                                         makeAdapter: { _ in XCTFail("must not load a missing model"); throw FakeError() })
+        var seen: [TranscriptionStatus] = []
+        let settled = expectation(description: "engine settled")
+        engine.onStatusChange = { seen.append($0); settled.fulfill() }
+
+        let start = Date()
+        engine.load()
+        XCTAssertLessThan(Date().timeIntervalSince(start), 0.25, "load() waited for the presence check")
+
+        await fulfillment(of: [settled], timeout: 5)
+        XCTAssertEqual(seen, [.missing])
+    }
+
     func testLoadMovesFromNotLoadedThroughLoadingToReady() async {
         let engine = makeEngine()
         XCTAssertEqual(engine.status, .notLoaded, "Nothing is loaded before load()")
@@ -154,7 +172,7 @@ final class TranscriptionEngineTests: XCTestCase {
             return fake!
         })
         engine.load()
-        XCTAssertEqual(engine.status, .loading)
+        XCTAssertNotEqual(engine.status, .ready, "load() returns before the model is loaded")
 
         let transcript = try await engine.transcribe([0.1, 0.2])
 

@@ -11,7 +11,8 @@ struct AppleSpeechEngine: EngineDescriptor {
     /// macOS 26+. Injectable for tests.
     var transcriberAvailable: () -> Bool = AppleSpeechAvailability.transcriberAvailableOnThisMac
     /// The asset state for a language. Injectable for tests; the live one
-    /// asks the OS (a quick XPC round trip) and blocks for it, at most 2 s.
+    /// asks the OS (an XPC round trip) and blocks for it, so it's only ever
+    /// called off main (the engine checks presence on its own queue).
     var assetState: (String) -> AppleSpeechAssetState = AppleSpeechEngine.liveAssetState
 
     func availability(in environment: EngineEnvironment) -> EngineAvailability {
@@ -60,7 +61,18 @@ struct AppleSpeechEngine: EngineDescriptor {
 
     static func liveAssetState(_ language: String) -> AppleSpeechAssetState {
         guard #available(macOS 26, *), AppleSpeechAvailability.isAvailable() else { return .unsupported }
-        // On timeout, let the load try: the adapter then fails with the real reason.
-        return (try? BlockingAsync.run(timeout: 2) { await AppleSpeechAssets.state(for: language) }) ?? .installed
+        return assetState(within: 10) { await AppleSpeechAssets.state(for: language) }
+    }
+
+    /// `query`'s answer, or `.notInstalled` if it doesn't come within
+    /// `timeout`: an unknown state shows as missing (with the download hint;
+    /// a later load checks again), never as installed — that would try a load
+    /// and report `.failed` for a model that may simply not be there.
+    static func assetState(within timeout: TimeInterval,
+                           _ query: @escaping @Sendable () async -> AppleSpeechAssetState) -> AppleSpeechAssetState {
+        do { return try BlockingAsync.run(timeout: timeout, query) } catch {
+            Log.info("The speech model's state didn't come within \(Int(timeout))s; treating it as not downloaded.")
+            return .notInstalled
+        }
     }
 }
