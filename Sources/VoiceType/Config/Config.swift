@@ -103,6 +103,12 @@ struct Config: Codable {
         engine == .whisper ? model : engineModels[engine.rawValue] ?? .automatic
     }
 
+    /// `engine`'s hand-set model file (`ModelContext.customPath`): `modelPath`
+    /// for whisper, which predates per-engine picks; "" for the others.
+    func customModelPath(for engine: EngineKind) -> String {
+        engine == .whisper ? modelPath : ""
+    }
+
     /// Records a model pick for `engine`. For whisper it also clears
     /// `modelPath`: a pick replaces any hand-set file.
     mutating func setModelChoice(_ choice: ModelChoice, for engine: EngineKind) {

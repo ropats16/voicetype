@@ -98,7 +98,7 @@ enum ModelSelection {
         let descriptor = engines.descriptor(for: engine.kind) ?? engines.whisper
         let context = ModelContext(language: config.language, hardware: environment.hardware, modelsDir: modelsDir,
                                    presentFilenames: presentFilenames,
-                                   customPath: descriptor.kind == .whisper ? config.modelPath : "")
+                                   customPath: config.customModelPath(for: descriptor.kind))
         return Selected(spec: descriptor.resolve(config.modelChoice(for: descriptor.kind), in: context),
                         fallbackReason: engine.fallbackReason)
     }

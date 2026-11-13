@@ -229,7 +229,7 @@ extension SettingsViewModel {
         let config = configStore.config
         return ModelContext(language: config.language, hardware: hardware, modelsDir: Paths.modelsDir,
                             presentFilenames: presentModelFilenames(),
-                            customPath: engine == .whisper ? config.modelPath : "")
+                            customPath: config.customModelPath(for: engine))
     }
 
     /// Re-derives the selected engine (and its model row) from the config.
