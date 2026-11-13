@@ -70,4 +70,79 @@ final class AppleSpeechMappingTests: XCTestCase {
         XCTAssertEqual(resolve(ModelSpec.autoDetect, system: "nl_NL", preferred: ["nl-NL", "fr-BE"]), "fr_BE")
         XCTAssertEqual(resolve(ModelSpec.autoDetect, system: "nl_NL", preferred: ["nl-NL"]), "en_US")
     }
+
+    // MARK: - Asset state
+
+    private func state(_ inventory: AppleSpeechAssetState.Inventory, onDisk: Bool = false,
+                       installing: Double? = nil) -> AppleSpeechAssetState {
+        AppleSpeechAssetState(inventory: inventory, installedOnMac: onDisk, installProgress: installing)
+    }
+
+    func testInventoryStatusesMapToAssetStates() {
+        XCTAssertEqual(state(.unsupported), .unsupported)
+        XCTAssertEqual(state(.supported), .notInstalled)
+        XCTAssertEqual(state(.downloading), .downloading(progress: nil))
+        XCTAssertEqual(state(.installed), .installed)
+    }
+
+    /// The inventory says `supported` for a model another app already
+    /// downloaded until this app reserves it; it transcribes all the same.
+    func testAModelAlreadyOnTheMacCountsAsInstalled() {
+        XCTAssertEqual(state(.supported, onDisk: true), .installed)
+    }
+
+    func testAnInstallThisAppStartedReportsItsProgress() {
+        XCTAssertEqual(state(.supported, installing: 0.4), .downloading(progress: 0.4))
+        XCTAssertEqual(state(.downloading, installing: 0.7), .downloading(progress: 0.7))
+        XCTAssertEqual(state(.installed, installing: 1), .installed)
+    }
+
+    func testOnlyAnInstalledModelCanTranscribe() {
+        XCTAssertTrue(AppleSpeechAssetState.installed.canTranscribe)
+        for other: AppleSpeechAssetState in [.unsupported, .notInstalled, .downloading(progress: 0.5)] {
+            XCTAssertFalse(other.canTranscribe)
+        }
+    }
+
+    // MARK: - Results → segments
+
+    private typealias Piece = AppleSpeechSegments.Piece
+
+    /// As the transcriber reported the JFK sample: the first result without a
+    /// leading space, later ones with.
+    func testSegmentsJoinLikeWhispers() {
+        let segments = AppleSpeechSegments.segments(from: [
+            Piece(text: "And so, my fellow Americans, ask not what your country can do for you.",
+                  start: 0, end: 7.8, wordTimes: []),
+            Piece(text: " Ask what you can do for your country.", start: 7.8, end: 10.5, wordTimes: []),
+        ], clipSeconds: 11)
+        XCTAssertEqual(segments.map(\.text), [" And so, my fellow Americans, ask not what your country can do for you.",
+                                              " Ask what you can do for your country."])
+        XCTAssertEqual(Transcript(segments: segments).text,
+                       " And so, my fellow Americans, ask not what your country can do for you."
+                       + " Ask what you can do for your country.")
+    }
+
+    func testTimesSpanTheWordsWhenTheyAreKnown() {
+        let segments = AppleSpeechSegments.segments(from: [
+            Piece(text: " Ask what you can.", start: 7.8, end: 10.5,
+                  wordTimes: [(7.9, 8.4), (8.4, 8.76), (8.76, 9.0), (9.0, 9.24)]),
+        ], clipSeconds: 11)
+        XCTAssertEqual(segments, [Transcript.Segment(text: " Ask what you can.", start: 7.9, end: 9.24)])
+    }
+
+    func testTimesStayInTheClipAndInOrder() {
+        let segments = AppleSpeechSegments.segments(from: [
+            Piece(text: "one", start: -0.2, end: 2.0, wordTimes: []),
+            Piece(text: "two", start: 1.5, end: 3.4, wordTimes: []),
+        ], clipSeconds: 3)
+        XCTAssertEqual(segments, [Transcript.Segment(text: " one", start: 0, end: 2.0),
+                                  Transcript.Segment(text: " two", start: 2.0, end: 3)])
+    }
+
+    func testBlankResultsAreDropped() {
+        XCTAssertEqual(AppleSpeechSegments.segments(from: [], clipSeconds: 3), [])
+        XCTAssertEqual(AppleSpeechSegments.segments(from: [Piece(text: "  ", start: 0, end: 3, wordTimes: [])],
+                                                    clipSeconds: 3), [])
+    }
 }
