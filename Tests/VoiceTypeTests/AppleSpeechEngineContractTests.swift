@@ -93,6 +93,24 @@ final class AppleSpeechEngineContractTests: XCTestCase {
         }
     }
 
+    /// Opt-in (it may download hundreds of MB): installs the en-US model, so
+    /// the tests above run. `VOICETYPE_INSTALL_APPLE_SPEECH=1 swift test
+    /// --filter AppleSpeechEngineContractTests`.
+    func testInstallLeavesTheModelInstalled() async throws {
+        guard #available(macOS 26, *), AppleSpeechAvailability.isAvailable() else {
+            throw XCTSkip("Apple SpeechAnalyzer needs macOS 26")
+        }
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["VOICETYPE_INSTALL_APPLE_SPEECH"] == "1",
+                          "set VOICETYPE_INSTALL_APPLE_SPEECH=1 to install the en-US speech model")
+        let last = Last()
+        try await AppleSpeechAssets.install(language: "en-US") { last.value = $0 }
+        let state = await AppleSpeechAssets.state(for: "en-US")
+        XCTAssertEqual(state, .installed)
+        XCTAssertEqual(last.value, 1)
+    }
+
+    private final class Last: @unchecked Sendable { var value: Double? }
+
     /// The fixture is already 16 kHz mono, so read it straight.
     private func loadMono16k(_ path: String) throws -> [Float] {
         let file = try AVAudioFile(forReading: URL(fileURLWithPath: path))
