@@ -10,6 +10,8 @@ struct SettingsView: View {
     /// can reach it via `viewModel.cancelCapture()` from `windowWillClose(_:)`.
     /// Passed explicitly so SwiftUI observes its `@Published` properties.
     @ObservedObject var recorder: HotkeyRecorder
+    /// The Download list starts open: a missing model's hint points at it.
+    @State private var showsDownloads = true
 
     var body: some View {
         Form {
@@ -111,6 +113,16 @@ struct SettingsView: View {
                     }
                 }
 
+                // WhisperKit, Parakeet: a Download button per model not yet installed.
+                let downloadable = viewModel.inAppDownloadableModels
+                if !downloadable.isEmpty {
+                    DisclosureGroup("Download a model", isExpanded: $showsDownloads) {
+                        ForEach(downloadable) { model in
+                            ModelDownloadRow(model: model, viewModel: viewModel)
+                        }
+                    }
+                }
+
                 Picker("Language",
                        selection: Binding(
                            get: { viewModel.isLanguageSelectable ? viewModel.language : "en" },
@@ -192,6 +204,34 @@ struct SettingsView: View {
         .onDisappear {
             // Window closed mid-capture: remove the monitor and resume the tap.
             recorder.cancelCapture(vm: viewModel)
+        }
+    }
+}
+
+// MARK: - ModelDownloadRow
+
+/// One not-downloaded model: Download, or its progress and Cancel while it
+/// downloads, and why the last try failed.
+private struct ModelDownloadRow: View {
+    let model: EngineModelOption
+    @ObservedObject var viewModel: SettingsViewModel
+
+    var body: some View {
+        HStack {
+            Text(model.label)
+            Spacer()
+            if let progress = viewModel.modelDownloadLabel(model.id) {
+                Text(progress).foregroundColor(.secondary).monospacedDigit()
+                Button("Cancel") { viewModel.cancelModelDownload(model.id) }
+            } else {
+                Button("Download") { viewModel.downloadModel(model.id) }
+                    .disabled(!viewModel.canDownloadModel(model.id))
+            }
+        }
+        if let error = viewModel.modelDownloadError(model.id) {
+            Text(error)
+                .font(.caption)
+                .foregroundColor(.red)
         }
     }
 }

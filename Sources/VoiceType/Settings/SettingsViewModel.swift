@@ -39,6 +39,8 @@ final class SettingsViewModel: ObservableObject {
     let environment: EngineEnvironment
     /// Apple Speech's OS-managed models (state, download).
     let speechAssets: SpeechModelAssets
+    /// Fetches folder models for the Download buttons (SettingsViewModel+ModelDownloads.swift).
+    let modelDownloader: ModelDownloading
 
     // MARK: - Published display state
 
@@ -67,6 +69,10 @@ final class SettingsViewModel: ObservableObject {
     @Published var speechAssetState: AppleSpeechAssetState?
     /// Why the last download failed; cleared by the next one.
     @Published var speechAssetError: String?
+    /// Folder-model downloads under way or failed, by engine and model.
+    @Published var modelDownloads: [ModelDownloadKey: ModelDownloadState] = [:]
+    /// The tasks behind `modelDownloads`' downloads, for Cancel.
+    var modelDownloadTasks: [ModelDownloadKey: Task<Void, Never>] = [:]
 
     // MARK: - Hotkey display state (Task 4b)
 
@@ -101,7 +107,8 @@ final class SettingsViewModel: ObservableObject {
          onModelSettingsChange: @escaping () -> Void,
          engines: EngineRegistry = .shared,
          environment: EngineEnvironment? = nil,
-         speechAssets: SpeechModelAssets = LiveSpeechModelAssets()) {
+         speechAssets: SpeechModelAssets = LiveSpeechModelAssets(),
+         modelDownloader: ModelDownloading = FolderModelDownloader.live) {
         self.configStore = configStore
         self.loginItem = loginItem
         self.availableMics = availableMics
@@ -114,6 +121,7 @@ final class SettingsViewModel: ObservableObject {
         self.onModelSettingsChange = onModelSettingsChange
         self.engines = engines
         self.speechAssets = speechAssets
+        self.modelDownloader = modelDownloader
         // This Mac's OS, with the injected hardware (so tests control both).
         self.environment = environment ?? EngineEnvironment(macOSMajor: EngineEnvironment.current.macOSMajor,
                                                             macOSMinor: EngineEnvironment.current.macOSMinor,

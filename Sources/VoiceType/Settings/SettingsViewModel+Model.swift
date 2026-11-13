@@ -224,7 +224,9 @@ extension SettingsViewModel {
         case .missing:
             let spec = currentModel()
             switch engines.downloadHint(for: spec) {
-            case .command(let command)?: return "Not downloaded. Run: \(command)"
+            case .command(let command)?:
+                return isDownloadableInApp(spec) ? "Not downloaded. Click Download below, or run: \(command)"
+                    : "Not downloaded. Run: \(command)"
             case .instructions(let text)?: return text
             case nil: return "Model file not found: \(spec.path)"
             }
@@ -239,7 +241,7 @@ extension SettingsViewModel {
     // MARK: - Private
 
     /// What the selected engine resolves models against.
-    private var modelContext: ModelContext {
+    var modelContext: ModelContext {
         let config = configStore.config
         return ModelContext(language: config.language, hardware: hardware, modelsDir: Paths.modelsDir,
                             presentFilenames: presentModelFilenames(),
