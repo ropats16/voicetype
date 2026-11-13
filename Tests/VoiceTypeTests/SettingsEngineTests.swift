@@ -130,4 +130,21 @@ final class SettingsEngineTests: XCTestCase {
         vm.modelStatusChanged(.missing)
         XCTAssertEqual(vm.modelStatusHint, "Open Settings › Model to download it.")
     }
+
+    /// The heading over models that aren't installed says how to get them,
+    /// with the engine's own command: the model's when one is missing, a
+    /// `<name>` placeholder when several are.
+    func testTheNotDownloadedHeadingUsesTheEnginesDownloadCommand() {
+        XCTAssertEqual(makeVM().notDownloadedHeading, "Not downloaded — run: make model MODEL=<name>")
+
+        configStore.update { $0.engine = "parakeet" }
+        engines = EngineRegistry([WhisperEngine(), FakeEngine(present: [fakePath("fast")], hintsCommand: true)])
+        XCTAssertEqual(makeVM().notDownloadedHeading, "Not downloaded — run: make fake-model FAKE=big")
+
+        engines = EngineRegistry([WhisperEngine(), FakeEngine(present: [], hintsCommand: true)])
+        XCTAssertEqual(makeVM().notDownloadedHeading, "Not downloaded — run: make fake-model FAKE=<name>")
+
+        engines = EngineRegistry([WhisperEngine(), FakeEngine(present: [])])
+        XCTAssertEqual(makeVM().notDownloadedHeading, "Not downloaded — Open Settings › Model to download it.")
+    }
 }

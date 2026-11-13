@@ -164,9 +164,23 @@ extension SettingsViewModel {
         return (split[true] ?? [], split[false] ?? [])
     }
 
-    /// The heading over models that aren't installed.
+    /// The heading over models that aren't installed: how to get them, from
+    /// the engine's own `downloadHint`. One command (or one model) is shown
+    /// as is; per-model commands get a `<name>` placeholder for the id.
     var notDownloadedHeading: String {
-        engine == .whisper ? "Not downloaded — run: make model MODEL=<name>" : "Not downloaded"
+        var context = modelContext
+        context.customPath = ""   // a hand-set file would stand in for every named model
+        let missing = modelLists.notDownloaded
+        let hints = missing.map { descriptor.downloadHint(for: descriptor.resolve(.named($0.id), in: context)) }
+        guard let first = hints.first.flatMap({ $0 }) else { return "Not downloaded" }
+        switch first {
+        case .instructions(let text):
+            return "Not downloaded — \(text)"
+        case .command(let command):
+            let id = missing[0].id
+            guard !hints.allSatisfy({ $0 == first }), command.hasSuffix(id) else { return "Not downloaded — run: \(command)" }
+            return "Not downloaded — run: \(command.dropLast(id.count))<name>"
+        }
     }
 
     /// The file name of the custom model, when that row is selected.

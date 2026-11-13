@@ -14,6 +14,9 @@ struct FakeEngine: EngineDescriptor {
     var present: Set<String>?
     var models = [EngineModelOption(id: "fast", label: "Fast"), EngineModelOption(id: "big", label: "Big")]
     var acknowledgement = "Fake engine, for tests."
+    /// Hint with a per-model command (`make fake-model FAKE=<id>`) instead of
+    /// the instructions sentence.
+    var hintsCommand = false
 
     func availability(in environment: EngineEnvironment) -> EngineAvailability {
         if needsAppleSilicon && !environment.hardware.isAppleSilicon {
@@ -36,7 +39,9 @@ struct FakeEngine: EngineDescriptor {
     func isPresent(_ spec: ModelSpec) -> Bool { present.map { $0.contains(spec.path) } ?? true }
 
     func downloadHint(for spec: ModelSpec) -> ModelDownloadHint? {
-        .instructions("Open Settings › Model to download it.")
+        guard hintsCommand else { return .instructions("Open Settings › Model to download it.") }
+        let id = URL(fileURLWithPath: spec.path).lastPathComponent.replacingOccurrences(of: "fake-", with: "")
+        return .command("make fake-model FAKE=\(id)")
     }
 
     func makeAdapter(_ options: EngineOptions) -> (ModelSpec) throws -> TranscriptionAdapter {
