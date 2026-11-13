@@ -4,7 +4,7 @@ import Speech
 
 extension TranscriptionEngine {
     /// The adapter factory for Apple's on-device SpeechAnalyzer (macOS 26+),
-    /// for the engine registry and the bench. There's no model file: the
+    /// behind `AppleSpeechEngine`. There's no model file: the
     /// spec's language picks the OS-managed model (`AppleSpeechLocale`) and
     /// `spec.path` is ignored (use `ModelSpec.appleSpeech(language:)`).
     ///
@@ -22,14 +22,13 @@ extension TranscriptionEngine {
 }
 
 extension ModelSpec {
-    /// Apple's engine has no model file; this path stands in for one. It always
-    /// exists (the Speech framework ships with every supported macOS), so the
-    /// engine's file-presence check passes and the real one is the asset state
-    /// (`AppleSpeechAssets.state(for:)`), which the registry should check instead.
-    static let appleSpeechModelPath = "/System/Library/Frameworks/Speech.framework"
+    /// Apple's engine has no model file; this stands in for one in `path`
+    /// (and reads well in messages: "Apple Speech on-device model").
+    /// `AppleSpeechEngine.isPresent` checks the asset state instead.
+    static let appleSpeechModelPath = "on-device model"
 
     static func appleSpeech(language: String) -> ModelSpec {
-        ModelSpec(path: appleSpeechModelPath, sha256: nil, language: language)
+        ModelSpec(path: appleSpeechModelPath, sha256: nil, language: language, engine: .appleSpeech)
     }
 }
 

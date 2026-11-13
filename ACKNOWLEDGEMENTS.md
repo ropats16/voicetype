@@ -48,3 +48,10 @@ or at the linked URL.
 - **fastcluster** — © 2011 Daniel Müllner; changes from 1.1.24 © Google Inc.
   BSD 2-Clause License (BSD-2-Clause). https://danifold.net/fastcluster.html
   Linked in through FluidAudio.
+
+## Apple Speech
+
+- **Speech framework and on-device speech models** — Apple Inc. Part of macOS,
+  under the macOS Software License Agreement. https://developer.apple.com/documentation/speech
+  SpeechAnalyzer / SpeechTranscriber (macOS 26); macOS downloads and manages
+  the models. Nothing is bundled with VoiceType.

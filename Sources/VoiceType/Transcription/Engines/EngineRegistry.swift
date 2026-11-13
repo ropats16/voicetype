@@ -10,6 +10,7 @@ struct EngineRegistry {
     static let shared = EngineRegistry([
         WhisperEngine(),
         ParakeetEngine(),
+        AppleSpeechEngine(),
     ])
 
     /// In registration order; whisper is always among them.

@@ -29,7 +29,7 @@ Options:
 
 | flag | default | |
 |---|---|---|
-| `--model <file>` | (required) | model file, directory or id; the engine's descriptor turns it into a `ModelSpec` |
+| `--model <file>` | (required) | model file, directory or id; the engine's descriptor turns it into a `ModelSpec` (`apple-speech` ignores it: `--language` picks the OS model) |
 | `--engine <id>` | `whisper` | an engine in `EngineRegistry.shared` this Mac can run (`BenchEngine.all`) |
 | `--manifest <tsv>` | `.bench/fixtures/manifest.tsv` | fixture list |
 | `--runs <n>` | `3` | passes over the short clips (round-robin) |
@@ -89,7 +89,9 @@ and keep the second if the first ran on a cold disk cache (load time).
   `proc_pid_rusage(RUSAGE_INFO_V4)`. Only this process is counted: an engine
   that runs inference in an OS service (Apple SpeechAnalyzer, #14) will read
   far too low, so compare its RAM with Activity Monitor or `footprint` on the
-  service as well. `baseline`: before the model loads (fixtures
+  service as well (Apple's model runs in a per-client `localspeechrecognition`
+  XPC process: ~166 MiB RSS peak on the long clip, M3 Max, macOS 26.7).
+  `baseline`: before the model loads (fixtures
   already decoded, ~40 MiB of them). `loaded`: after load + warm-up. `peak`:
   highest footprint *sampled* on a short timer (`BenchRunner.memorySampleInterval`)
   and between jobs (never inside a timed job), from load start to the end — the

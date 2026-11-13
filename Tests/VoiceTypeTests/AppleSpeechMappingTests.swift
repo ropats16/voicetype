@@ -145,4 +145,38 @@ final class AppleSpeechMappingTests: XCTestCase {
         XCTAssertEqual(AppleSpeechSegments.segments(from: [Piece(text: "  ", start: 0, end: 3, wordTimes: [])],
                                                     clipSeconds: 3), [])
     }
+
+    // MARK: - Engine descriptor
+
+    func testRegisteredButOfferedOnlyOnMacOS26WithTheHardware() {
+        XCTAssertNotNil(EngineRegistry.shared.descriptor(for: .appleSpeech))
+        let engine = AppleSpeechEngine(transcriberAvailable: { true })
+        XCTAssertEqual(engine.availability(in: .mac(15)), .unavailable(reason: "Apple Speech needs macOS 26"))
+        XCTAssertEqual(engine.availability(in: .mac(26)), .available)
+        XCTAssertEqual(AppleSpeechEngine(transcriberAvailable: { false }).availability(in: .mac(26)),
+                       .unavailable(reason: "this Mac doesn't support Apple Speech"))
+    }
+
+    /// A model that isn't downloaded (or still downloading) reports
+    /// `.missing` with a Settings hint; an unsupported language loads, to fail
+    /// with its reason.
+    func testPresenceIsTheAssetState() {
+        let spec = ModelSpec.appleSpeech(language: "en")
+        for (state, present) in [(AppleSpeechAssetState.installed, true), (.unsupported, true),
+                                 (.notInstalled, false), (.downloading(progress: 0.3), false)] {
+            XCTAssertEqual(AppleSpeechEngine(assetState: { _ in state }).isPresent(spec), present, "\(state)")
+        }
+        guard case .instructions(let text)? = AppleSpeechEngine().downloadHint(for: spec) else {
+            return XCTFail("expected Settings instructions")
+        }
+        XCTAssertTrue(text.contains("Settings"))
+    }
+
+    func testTheModelIsTheLanguageWhateverTheModelArgument() {
+        let engine = AppleSpeechEngine()
+        XCTAssertEqual(engine.spec(forModelArgument: "anything", language: "de"),
+                       ModelSpec(path: ModelSpec.appleSpeechModelPath, sha256: nil, language: "de", engine: .appleSpeech))
+        XCTAssertEqual(engine.spec(forModelArgument: "x", language: "").language, ModelSpec.autoDetect)
+        XCTAssertEqual(engine.spec(forModelArgument: "x", language: "de").displayName, "Apple Speech on-device model")
+    }
 }
