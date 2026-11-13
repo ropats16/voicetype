@@ -26,6 +26,9 @@ protocol FolderModelEngine: EngineDescriptor {
 }
 
 extension FolderModelEngine {
+    /// Both are Core ML: the first load specializes the model for the Neural Engine.
+    var compilesOnFirstLoad: Bool { true }
+
     var models: [EngineModelOption] {
         Catalog.models.map { EngineModelOption(id: $0.id, label: $0.label) }
     }

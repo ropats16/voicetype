@@ -85,6 +85,13 @@ struct EngineRegistry {
         descriptor(for: spec.engine)?.downloadHint(for: spec)
     }
 
+    /// Whether loading `spec` now is its first load on this Mac and OS build
+    /// for an engine that compiles models then (`compilesOnFirstLoad`), so
+    /// "Loading" can say it'll take a while.
+    func isFirstLoad(_ spec: ModelSpec, history: ModelLoadHistory) -> Bool {
+        descriptor(for: spec.engine)?.compilesOnFirstLoad == true && !history.hasLoaded(spec)
+    }
+
     /// One factory over every registered engine: each spec is loaded by its
     /// own engine's adapter, so switching engine is just switching model.
     func makeAdapter(_ options: EngineOptions) -> (ModelSpec) throws -> TranscriptionAdapter {

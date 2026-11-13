@@ -41,6 +41,11 @@ enum Paths {
         appSupportDir.appendingPathComponent("model-checksums.json", isDirectory: false)
     }
 
+    /// `.../VoiceType/model-loads.json` — which models loaded on which OS build (see `ModelLoadHistory`).
+    static var modelLoadsFile: URL {
+        appSupportDir.appendingPathComponent("model-loads.json", isDirectory: false)
+    }
+
     /// Create the support + models directories if they do not yet exist.
     @discardableResult
     static func ensureDirectories() -> Bool {

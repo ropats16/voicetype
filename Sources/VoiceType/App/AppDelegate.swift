@@ -36,7 +36,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         maxSeconds: { [configStore] in configStore.config.maxRecordingSeconds }
     )
     private lazy var monitor = ReadinessMonitor(probe: permissions, clock: SystemClock(),
-                                                engine: EngineReadiness(engine))
+                                                engine: EngineReadiness(engine, history: loadHistory))
+    /// Which models have loaded on this OS build, so a Core ML model's first
+    /// load says it's being prepared rather than just "Loading".
+    private let loadHistory = ModelLoadHistory.shared
     /// Built at launch, not on the first press, so the first dictation
     /// doesn't pay for the indicator, delivery and session setup.
     private var dictation: DictationSession?
@@ -186,8 +189,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Called on main with each status the engine reports.
     private func engineStatusChanged(_ status: TranscriptionStatus) {
+        if status == .ready { loadHistory.recordLoad(engine.model) }
         MainActor.assumeIsolated { settingsViewModel?.modelStatusChanged(status) }
-        let readiness = EngineReadiness(engine)
+        let readiness = EngineReadiness(engine, history: loadHistory)
         if let notice = ModelHints.notice(for: status, engine: readiness) {
             Log.error(notice.log)
             Notifier.notify(title: notice.title, body: notice.body)
@@ -266,7 +270,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     hardware: .current,
                     currentModel: { [engine] in engine.model },
                     modelStatus: engine.status,
-                    onModelSettingsChange: { [weak self] in self?.applyModelSettings() }
+                    onModelSettingsChange: { [weak self] in self?.applyModelSettings() },
+                    isFirstLoad: { [loadHistory] in EngineRegistry.shared.isFirstLoad($0, history: loadHistory) }
                 )
                 settingsViewModel = vm
                 settingsWindowController = SettingsWindowController(viewModel: vm)

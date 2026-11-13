@@ -24,6 +24,9 @@ struct EngineReadiness: Equatable {
     /// How to get the model, from its engine's descriptor; nil for a custom
     /// file (or an engine with nothing to suggest).
     var download: ModelDownloadHint?
+    /// Loading it now is its first load on this Mac (a Core ML compile,
+    /// `EngineRegistry.isFirstLoad`), so loading says it'll take a while.
+    var isFirstLoad = false
 }
 
 /// The global hotkey tap. `HotkeyManager.start()` only says installed or not;

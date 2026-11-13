@@ -36,11 +36,14 @@ enum ReadinessIssue: Equatable {
     case modelVerifying
     /// Transient: the model is loading (or `load()` hasn't run yet).
     case modelLoading
+    /// Transient: `modelLoading` for the model's first load on this Mac,
+    /// which compiles it (Core ML; `EngineReadiness.isFirstLoad`).
+    case modelPreparing
 
     /// Settles by itself, no user action needed.
     var isTransient: Bool {
         switch self {
-        case .hotkeysStarting, .modelVerifying, .modelLoading: return true
+        case .hotkeysStarting, .modelVerifying, .modelLoading, .modelPreparing: return true
         default: return false
         }
     }
@@ -57,6 +60,7 @@ enum ReadinessIssue: Equatable {
         case .hotkeysStarting: return "Starting hotkeys…"
         case .modelVerifying: return "Verifying model…"
         case .modelLoading: return "Loading model…"
+        case .modelPreparing: return "Preparing model…"
         }
     }
 
@@ -83,6 +87,8 @@ enum ReadinessIssue: Equatable {
             return "Checking the model file (first use only)."
         case .modelLoading:
             return "Loading the transcription model."
+        case .modelPreparing:
+            return ModelHints.preparing
         }
     }
 
@@ -92,7 +98,7 @@ enum ReadinessIssue: Equatable {
         case .microphoneDenied, .microphoneRestricted: return .openMicrophoneSettings
         case .microphoneNotDetermined: return .requestMicrophone
         case .modelMissing, .modelFailed: return .openModelsFolder
-        case .hotkeysStarting, .modelVerifying, .modelLoading: return nil
+        case .hotkeysStarting, .modelVerifying, .modelLoading, .modelPreparing: return nil
         }
     }
 }
@@ -120,11 +126,11 @@ enum AppStatus: Equatable {
     var headline: String { "VoiceType — \(title)" }
 
     /// Whether a hotkey press should start a recording. A loading or
-    /// verifying model doesn't block it (the job queues behind the load);
+    /// verifying (or preparing) model doesn't block it (the job queues behind the load);
     /// anything else does — notably a denied mic, which would record silence.
     var allowsDictation: Bool {
         switch self {
-        case .ready, .starting(.modelLoading), .starting(.modelVerifying): return true
+        case .ready, .starting(.modelLoading), .starting(.modelPreparing), .starting(.modelVerifying): return true
         default: return false
         }
     }
@@ -141,7 +147,7 @@ enum AppStatus: Equatable {
 ///  — transient, shown only when nothing above applies —
 ///  6. Hotkeys starting (Accessibility granted, tap not installed yet).
 ///  7. Model verifying.
-///  8. Model loading.
+///  8. Model loading (preparing, on its first load).
 ///
 /// Actionable before transient: the user can fix a permission while the model
 /// loads. Permissions before the model: they're the first-run steps, in
@@ -177,7 +183,7 @@ enum AppReadiness {
 
         switch engine.status {
         case .verifying: issues.append(.modelVerifying)
-        case .notLoaded, .loading: issues.append(.modelLoading)
+        case .notLoaded, .loading: issues.append(engine.isFirstLoad ? .modelPreparing : .modelLoading)
         case .missing, .failed, .ready: break
         }
 

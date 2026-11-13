@@ -39,6 +39,9 @@ final class SettingsViewModel: ObservableObject {
     let environment: EngineEnvironment
     /// Apple Speech's OS-managed models (state, download).
     let speechAssets: SpeechModelAssets
+    /// Whether loading a model now is its first load on this Mac (a Core
+    /// ML compile), for the status line.
+    let isFirstLoad: (ModelSpec) -> Bool
     /// Fetches folder models for the Download buttons (SettingsViewModel+ModelDownloads.swift).
     let modelDownloader: ModelDownloading
 
@@ -108,7 +111,8 @@ final class SettingsViewModel: ObservableObject {
          engines: EngineRegistry = .shared,
          environment: EngineEnvironment? = nil,
          speechAssets: SpeechModelAssets = LiveSpeechModelAssets(),
-         modelDownloader: ModelDownloading = FolderModelDownloader.live) {
+         modelDownloader: ModelDownloading = FolderModelDownloader.live,
+         isFirstLoad: @escaping (ModelSpec) -> Bool = { _ in false }) {
         self.configStore = configStore
         self.loginItem = loginItem
         self.availableMics = availableMics
@@ -122,6 +126,7 @@ final class SettingsViewModel: ObservableObject {
         self.engines = engines
         self.speechAssets = speechAssets
         self.modelDownloader = modelDownloader
+        self.isFirstLoad = isFirstLoad
         // This Mac's OS, with the injected hardware (so tests control both).
         self.environment = environment ?? EngineEnvironment(macOSMajor: EngineEnvironment.current.macOSMajor,
                                                             macOSMinor: EngineEnvironment.current.macOSMinor,

@@ -14,6 +14,10 @@ struct ModelNotice: Equatable {
 /// quoted to run; instructions (an engine whose models aren't files fetched
 /// by command) are shown as written, with no file path assumed.
 enum ModelHints {
+    /// A Core ML model's first load on this Mac (it's being compiled), for
+    /// the menu and Settings in place of "Loading".
+    static let preparing = "Preparing model for this Mac (first load, ~20 s)…"
+
     /// Menu line for a missing model.
     static func missing(download: ModelDownloadHint?) -> String {
         switch download {

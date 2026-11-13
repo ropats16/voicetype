@@ -54,6 +54,12 @@ protocol EngineDescriptor {
     /// model comes by command, or the OS manages it). Default: nil.
     func inAppDownload(of id: String, in modelsDir: URL) -> ModelDownload?
 
+    /// Whether a model's first load on this Mac (and after a macOS update)
+    /// compiles it, so it's much slower than later ones: Core ML engines
+    /// specialize the model for this chip's Neural Engine. Readiness and
+    /// Settings then say so (`EngineRegistry.isFirstLoad`). Default: false.
+    var compilesOnFirstLoad: Bool { get }
+
     /// The spec for a model named on the command line (`--bench --model`,
     /// `--selftest --model`): a path, or whatever the engine takes there.
     /// Default: an unverified spec for that path.
@@ -74,6 +80,7 @@ extension EngineDescriptor {
     func availability(in environment: EngineEnvironment) -> EngineAvailability { .available }
     var supportedLanguages: Set<String>? { nil }
     var models: [EngineModelOption] { [] }
+    var compilesOnFirstLoad: Bool { false }
 
     func installedModelIDs(in context: ModelContext) -> Set<String> {
         Set(models.filter { isPresent(resolve(.named($0.id), in: context)) }.map(\.id))

@@ -232,7 +232,7 @@ extension SettingsViewModel {
             }
         case .failed(let reason): return "Failed to load: \(reason)"
         case .verifying: return "Verifying the model's checksum (first use)…"
-        case .loading: return "Loading model…"
+        case .loading: return isFirstLoad(currentModel()) ? ModelHints.preparing : "Loading model…"
         case .ready: return modelSwitchError
         case .notLoaded: return nil
         }
